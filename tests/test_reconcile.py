@@ -197,3 +197,35 @@ def test_event_sweep_failure_does_not_advance_cursor():
     with pytest.raises(RuntimeError):
         rec.run("event", NOW + timedelta(hours=1))
     assert repo.get_cursor("event") == NOW
+
+
+def test_event_interrupted_mid_accounts_is_reprocessed_next_run():
+    accounts = [ACCOUNT, "222233334444", "333344445555"]
+
+    class FlakyHealth(FakeHealth):
+        fail = True
+
+        def affected_entities(self, event_arn, account_id):
+            if self.fail and account_id == accounts[1]:
+                raise RuntimeError("throttled")
+            return super().affected_entities(event_arn, account_id)
+
+    health = FlakyHealth([EVENT], {ARN: accounts}, {(ARN, a): [Entity("db-1", "PENDING")] for a in accounts}, {ARN: "desc"})
+    rec, repo, _ = _reconciler(health)
+    repo.set_cursor("event", NOW)
+    with pytest.raises(RuntimeError):
+        rec.run("event", NOW + timedelta(hours=1))
+    assert repo.get_cursor("event") == NOW
+
+    health.fail = False
+    result = rec.run("event", NOW + timedelta(hours=2))
+    assert result.events == 1
+    for account_id in accounts:
+        assert repo.get_tracking(tracking_id_of(GID, account_id)) is not None
+    assert rec.run("event", NOW + timedelta(hours=3)).events == 0
+
+
+def test_full_mode_writes_swept_marker():
+    rec, repo, _ = _reconciler(_health())
+    rec.run("full", NOW)
+    assert rec.run("event", NOW + timedelta(hours=1)).events == 0

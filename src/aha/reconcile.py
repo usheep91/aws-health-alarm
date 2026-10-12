@@ -14,6 +14,9 @@ from aha.routing import Router
 
 CURSOR_OVERLAP = timedelta(hours=2)
 EVENT_CURSOR = "event"
+# 이벤트의 모든 계정 처리를 마친 뒤 기록하는 마커. EventRecord는 첫 계정 처리 시점에 저장되므로
+# 처리 완료 여부 판정에는 쓸 수 없다.
+SWEPT_MARKER_PREFIX = "EVTSWEPT#"
 # TRIAGE/OPEN은 항상 조회한다. RESOLVED_AUTO는 REOPEN_WATCH(해결 후 30일) 동안만 재발 감지를 위해,
 # RESOLVED_MANUAL은 불일치가 아직 플래그되지 않았고 MISMATCH_WATCH(유예 기간 + 12시간) 동안만 조회한다.
 # 감시 기간이 지난 해결 항목은 Health API 호출을 늘리지 않도록 더 이상 조회하지 않는다.
@@ -66,10 +69,13 @@ class Reconciler:
     def _out_of_time(self) -> bool:
         return self._time_left is not None and self._time_left() < STOP_MARGIN_SECONDS
 
+    @staticmethod
+    def _api_last_updated(event: dict) -> datetime:
+        return event.get("lastUpdatedTime") or event.get("startTime") or EPOCH
+
     def _unchanged(self, event: dict) -> bool:
-        record = self._repo.get_event(event["arn"])
-        api_updated = event.get("lastUpdatedTime") or event.get("startTime") or EPOCH
-        return record is not None and record.last_updated_time == api_updated
+        swept = self._repo.get_cursor(f"{SWEPT_MARKER_PREFIX}{event['arn']}")
+        return swept is not None and swept == self._api_last_updated(event)
 
     def _event_sweep(self, mode: str, now: datetime) -> ReconcileResult:
         result = ReconcileResult()
@@ -94,6 +100,8 @@ class Reconciler:
             for account_id in accounts:
                 entities = self._health.affected_entities(event["arn"], account_id)
                 self._observe(to_snapshot(event, account_id, description, entities), now, result)
+            # 모든 계정을 처리한 뒤에만 기록한다. 중간 실패 시 다음 event 실행이 남은 계정을 다시 처리한다.
+            self._repo.set_cursor(f"{SWEPT_MARKER_PREFIX}{event['arn']}", self._api_last_updated(event))
 
         if mode == "event":
             # 실패 시 이 줄에 도달하지 않으므로 다음 실행이 같은 구간을 다시 본다.
