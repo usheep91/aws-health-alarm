@@ -65,9 +65,19 @@ def apply_action(
         item.state, item.tier = State.OPEN, Tier.REQUIRED
 
     repo.save_tracking(item)
-    detail = reason or assignee or (due.isoformat() if due else None)
-    repo.append_audit(tracking_id, AuditEntry(now, actor, kind.value, before.value, item.state.value, detail))
+    repo.append_audit(
+        tracking_id,
+        AuditEntry(now, actor, kind.value, before.value, item.state.value, _audit_detail(kind, assignee, due, reason)),
+    )
     return item
+
+
+def _audit_detail(kind: ActionKind, assignee: str | None, due: date | None, reason: str | None) -> str | None:
+    if kind is ActionKind.ASSIGN:
+        return assignee
+    if kind is ActionKind.SET_DUE and due is not None:
+        return f"{due.isoformat()} ({reason})" if reason else due.isoformat()
+    return reason
 
 
 def apply_group_action(
@@ -87,7 +97,7 @@ def apply_group_action(
     for tracking_id in tracking_ids:
         try:
             applied.append(_apply_with_retry(repo, tracking_id, kind, actor, now, assignee, due, reason))
-        except InvalidAction:
+        except (InvalidAction, ConcurrentModification):
             if len(tracking_ids) == 1:
                 raise
     if not applied:
@@ -110,11 +120,19 @@ def apply_group_action(
     ]
 
 
-def _apply_with_retry(repo, tracking_id, kind, actor, now, assignee, due, reason) -> TrackingItem:
-    for attempt in range(MAX_ATTEMPTS):
+def _apply_with_retry(
+    repo: Repository,
+    tracking_id: str,
+    kind: ActionKind,
+    actor: str,
+    now: datetime,
+    assignee: str | None,
+    due: date | None,
+    reason: str | None,
+) -> TrackingItem:
+    for _ in range(MAX_ATTEMPTS - 1):
         try:
             return apply_action(repo, tracking_id, kind, actor, now, assignee=assignee, due=due, reason=reason)
         except ConcurrentModification:
-            if attempt == MAX_ATTEMPTS - 1:
-                raise
-    raise AssertionError("unreachable")
+            continue
+    return apply_action(repo, tracking_id, kind, actor, now, assignee=assignee, due=due, reason=reason)
