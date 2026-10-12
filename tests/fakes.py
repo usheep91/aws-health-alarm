@@ -123,3 +123,27 @@ class MapRouter:
 
     def account_name(self, account_id):
         return self.names.get(account_id)
+
+
+class FakeSlack:
+    def __init__(self, fail_channels=()):
+        from aha.adapters.slack_client import SlackChannelError
+
+        self._error = SlackChannelError
+        self.fail_channels = set(fail_channels)
+        self.posts = []
+        self.updates = []
+        self.views = []
+
+    def post(self, channel, text, blocks=None, thread_ts=None):
+        if channel in self.fail_channels:
+            raise self._error("channel_not_found")
+        ts = f"1700000000.{len(self.posts) + 1:06d}"
+        self.posts.append({"channel": channel, "text": text, "blocks": blocks, "thread_ts": thread_ts, "ts": ts})
+        return ts
+
+    def update(self, channel, ts, text, blocks):
+        self.updates.append({"channel": channel, "ts": ts, "text": text, "blocks": blocks})
+
+    def open_view(self, trigger_id, view):
+        self.views.append({"trigger_id": trigger_id, "view": view})
