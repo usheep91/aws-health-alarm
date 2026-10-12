@@ -126,3 +126,15 @@ def test_description_is_escaped():
 
 def test_account_name_is_escaped():
     assert account_label(ACCOUNT, {ACCOUNT: "<evil>"}) == f"{ACCOUNT} (&lt;evil&gt;)"
+
+
+def _action(action):
+    return Intent(IntentKind.ACTION, "g1", None, {"action": action, "actor": "U1", "accounts": [ACCOUNT], "assignee": None, "due": None, "reason": None, "channel": "C1"})
+
+
+def test_triage_required_action_text():
+    assert render_thread(_action("TRIAGE_REQUIRED"), {}) == f"<@U1> 님이 {ACCOUNT} '조치 필요'로 판정했습니다. Due Date 추적을 시작합니다"
+
+
+def test_unknown_action_text_is_generic():
+    assert render_thread(_action("SOMETHING_ELSE"), {}) == f"<@U1> 님이 {ACCOUNT} 항목을 갱신했습니다 (SOMETHING_ELSE)"

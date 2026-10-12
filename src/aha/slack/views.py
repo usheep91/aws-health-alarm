@@ -81,7 +81,8 @@ def _chunks(lines: list[str]) -> list[str]:
     for line in lines:
         candidate = f"{current}\n{line}" if current else line
         if len(candidate) > SECTION_LIMIT:
-            chunks.append(current)
+            if current:
+                chunks.append(current)
             current = line
         else:
             current = candidate

@@ -44,3 +44,11 @@ def test_resources_view_escapes_entity_values():
     view = resources_view([item], {item.tracking_id: [Entity("<!channel>&x", "PENDING")]}, {})
     text = "\n".join(b["text"]["text"] for b in view["blocks"])
     assert "`&lt;!channel&gt;&amp;x`" in text
+
+
+def test_resources_view_never_emits_empty_section():
+    from aha.slack.views import _chunks
+
+    chunks = _chunks(["x" * 3000])
+    assert chunks == ["x" * 3000]
+    assert all(c for c in _chunks(["a", "y" * 3000, "b"]))

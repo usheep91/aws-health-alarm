@@ -203,5 +203,7 @@ def _action_text(d: dict, names: dict[str, str | None]) -> str:
             return f"{actor} 님이 {accounts} 조치 완료 처리했습니다"
         case "NOT_APPLICABLE":
             return f"{actor} 님이 {accounts} '해당 없음' 처리했습니다 (사유: {esc(str(d['reason']))})"
-        case _:
+        case "TRIAGE_REQUIRED":
             return f"{actor} 님이 {accounts} '조치 필요'로 판정했습니다. Due Date 추적을 시작합니다"
+        case _:
+            return f"{actor} 님이 {accounts} 항목을 갱신했습니다 ({d['action']})"
