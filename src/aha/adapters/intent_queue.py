@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import hashlib
+import uuid
 from collections.abc import Iterable
 
 from aha.domain.models import Intent
@@ -25,7 +25,8 @@ class SqsIntentPublisher:
                         "MessageBody": body,
                         # 그룹 단위 직렬 처리로 Notice 중복 게시를 막는다.
                         "MessageGroupId": intent.group_id,
-                        "MessageDeduplicationId": hashlib.sha256(body.encode()).hexdigest(),
+                        # 동일 내용의 정당한 반복 intent가 5분 dedup 창에서 버려지지 않도록 매번 고유 ID.
+                        "MessageDeduplicationId": uuid.uuid4().hex,
                     }
                 )
             resp = self._client.send_message_batch(QueueUrl=self._queue_url, Entries=entries)

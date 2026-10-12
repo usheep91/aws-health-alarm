@@ -30,3 +30,23 @@ def test_publish_nothing_makes_no_call():
             raise AssertionError("should not be called")
 
     SqsIntentPublisher(Boom(), "url").publish([])
+
+
+@mock_aws
+def test_identical_intents_published_separately_are_both_received():
+    sqs = boto3.client("sqs", region_name="ap-northeast-2")
+    url = sqs.create_queue(QueueName="t.fifo", Attributes={"FifoQueue": "true"})["QueueUrl"]
+    publisher = SqsIntentPublisher(sqs, url)
+    intent = Intent(IntentKind.ACTION, "g1", None, {"action": "ASSIGN", "actor": "U1", "accounts": ["1"], "assignee": "U2"})
+    publisher.publish([intent])
+    publisher.publish([intent])
+
+    bodies = []
+    while True:
+        msgs = sqs.receive_message(QueueUrl=url, MaxNumberOfMessages=10).get("Messages", [])
+        if not msgs:
+            break
+        for m in msgs:
+            bodies.append(m["Body"])
+            sqs.delete_message(QueueUrl=url, ReceiptHandle=m["ReceiptHandle"])
+    assert len(bodies) == 2
