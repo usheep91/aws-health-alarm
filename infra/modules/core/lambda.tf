@@ -35,10 +35,11 @@ resource "aws_lambda_function" "fn" {
   tags       = var.tags
 }
 
+# Slack API 호출 지연을 고려해 배치(5건) 처리가 notifier timeout 안에 끝나도록 한다.
 resource "aws_lambda_event_source_mapping" "notify" {
   event_source_arn        = aws_sqs_queue.notify.arn
   function_name           = aws_lambda_function.fn["notifier"].arn
-  batch_size              = 10
+  batch_size              = 5
   function_response_types = ["ReportBatchItemFailures"]
 
   scaling_config {

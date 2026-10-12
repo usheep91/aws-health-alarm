@@ -7,7 +7,7 @@ locals {
     }
     notifier = {
       handler = "aha.handlers.notifier.lambda_handler"
-      timeout = 60
+      timeout = 120
       memory  = 256
     }
     interaction = {
@@ -24,6 +24,8 @@ locals {
     SLACK_SECRET_ARN             = var.slack_secret_arn
     POWERTOOLS_SERVICE_NAME      = "aha"
     POWERTOOLS_METRICS_NAMESPACE = "AHA"
+    # 설정은 콜드 스타트 때만 SSM에서 읽으므로, 변경 시 환경변수를 바꿔 Lambda를 새 버전으로 롤링한다.
+    CONFIG_SHA = sha256(var.config_yaml)
   }
 }
 
@@ -77,10 +79,11 @@ resource "aws_sqs_queue" "notify_dlq" {
   tags                      = var.tags
 }
 
+# visibility timeout은 notifier timeout(120초)의 6배.
 resource "aws_sqs_queue" "notify" {
   name                       = "${var.name_prefix}-notify.fifo"
   fifo_queue                 = true
-  visibility_timeout_seconds = 360
+  visibility_timeout_seconds = 720
   sqs_managed_sse_enabled    = true
   redrive_policy = jsonencode({
     deadLetterTargetArn = aws_sqs_queue.notify_dlq.arn

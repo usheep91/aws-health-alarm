@@ -3,7 +3,7 @@ terraform {
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = ">= 5.40"
+      version = "~> 6.0"
     }
   }
   # 원격 상태는 조직 표준 백엔드를 사용한다. 예:
