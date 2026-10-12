@@ -69,3 +69,20 @@ resource "aws_cloudwatch_metric_alarm" "reconcile_missed" {
   treat_missing_data  = "notBreaching"
   alarm_actions       = [aws_sns_topic.alarms.arn]
 }
+
+# full/entity sweep이 시간 예산 소진으로 중단되면 알린다(재실행 주기가 길어 다음 실행까지 누락이 길어진다).
+# event sweep 중단은 커서를 전진시키지 않아 다음 시간에 이어 처리하며, 지속되면 heartbeat 알람이 울린다.
+resource "aws_cloudwatch_metric_alarm" "reconcile_incomplete" {
+  for_each            = toset(["full", "entity"])
+  alarm_name          = "${var.name_prefix}-reconcile-incomplete-${each.key}"
+  namespace           = "AHA"
+  metric_name         = "ReconcileIncomplete"
+  dimensions          = { service = "aha", mode = each.key }
+  statistic           = "Sum"
+  period              = 3600
+  evaluation_periods  = 1
+  threshold           = 0
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = [aws_sns_topic.alarms.arn]
+}

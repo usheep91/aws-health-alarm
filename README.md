@@ -57,5 +57,6 @@ pytest -q
 |---|---|---|
 | `*-reconcile-heartbeat` | event sweep 3시간 이상 실패 | reconcile Lambda 로그 확인 (Health API 권한/스로틀링) |
 | `*-reconcile-missed-items` | 주간 full resync에서 누락 발견 | event sweep 커서·필터 점검 |
+| `*-reconcile-incomplete-{full,entity}` | full/entity sweep이 Lambda 시간 예산(종료 60초 전) 소진으로 중단됨 | reconcile 로그에서 처리량·Health API 지연 확인. 이벤트/항목 수가 많으면 sweep 분할 또는 주기 조정 검토 |
 | `*-notify-dlq-not-empty` | Slack 게시 5회 실패 | DLQ 메시지 확인 후 원인 해결, SQS 콘솔의 DLQ redrive로 재처리 |
 | `*-<fn>-errors` | Lambda 오류 | 해당 함수 로그 확인 |
