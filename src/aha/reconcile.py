@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from aha.adapters.health_client import to_snapshot
+from aha.adapters.health_client import EPOCH, to_snapshot
 from aha.config import Config
 from aha.domain.models import EventSnapshot, Intent, IntentKind, State, TrackingItem
 from aha.domain.state_machine import MISMATCH_GRACE
@@ -19,6 +20,8 @@ EVENT_CURSOR = "event"
 ENTITY_SWEEP_STATES = (State.TRIAGE, State.OPEN, State.RESOLVED_AUTO, State.RESOLVED_MANUAL)
 REOPEN_WATCH = timedelta(days=30)
 MISMATCH_WATCH = MISMATCH_GRACE + timedelta(hours=12)
+# Lambda 종료 전에 sweep을 멈추기 위한 여유 시간(초).
+STOP_MARGIN_SECONDS = 60
 
 
 def _needs_entity_check(item: TrackingItem, now: datetime) -> bool:
@@ -39,6 +42,7 @@ class ReconcileResult:
     events: int = 0
     observations: int = 0
     created: int = 0
+    completed: bool = True
 
 
 class Reconciler:
@@ -48,13 +52,24 @@ class Reconciler:
         self._publisher = publisher
         self._router = router
         self._cfg = cfg
+        self._time_left: Callable[[], float] | None = None
 
-    def run(self, mode: str, now: datetime) -> ReconcileResult:
+    def run(self, mode: str, now: datetime, time_left: Callable[[], float] | None = None) -> ReconcileResult:
+        """time_left는 남은 실행 시간(초)을 반환한다. 여유가 STOP_MARGIN_SECONDS 미만이면 sweep을 중단한다."""
+        self._time_left = time_left
         if mode in ("event", "full"):
             return self._event_sweep(mode, now)
         if mode == "entity":
             return self._entity_sweep(now)
         raise ValueError(f"unknown reconcile mode: {mode}")
+
+    def _out_of_time(self) -> bool:
+        return self._time_left is not None and self._time_left() < STOP_MARGIN_SECONDS
+
+    def _unchanged(self, event: dict) -> bool:
+        record = self._repo.get_event(event["arn"])
+        api_updated = event.get("lastUpdatedTime") or event.get("startTime") or EPOCH
+        return record is not None and record.last_updated_time == api_updated
 
     def _event_sweep(self, mode: str, now: datetime) -> ReconcileResult:
         result = ReconcileResult()
@@ -63,7 +78,15 @@ class Reconciler:
         statuses = ["open", "upcoming"] if since is None else ["open", "upcoming", "closed"]
 
         for event in self._health.iter_events(updated_since=since, status_codes=statuses):
+            if self._out_of_time():
+                # 커서를 전진시키지 않으므로 다음 실행이 남은 구간을 다시 본다.
+                result.completed = False
+                return result
             if self._skip(event):
+                continue
+            # 메타데이터가 그대로인 이벤트는 건너뛴다(엔티티 변화는 entity sweep 담당).
+            # 끝나지 않는 backlog가 매시간 전체 재처리되는 것을 막는다.
+            if mode == "event" and self._unchanged(event):
                 continue
             result.events += 1
             accounts = self._health.affected_accounts(event["arn"])
@@ -88,7 +111,12 @@ class Reconciler:
     def _entity_sweep(self, now: datetime) -> ReconcileResult:
         result = ReconcileResult()
         items = [i for state in ENTITY_SWEEP_STATES for i in self._repo.list_by_state(state)]
+        # 시간 예산이 부족해도 누락 Notice 복구는 반드시 수행되도록 먼저 실행한다.
+        self._repair_missing_notices({i.group_id for i in items})
         for item in items:
+            if self._out_of_time():
+                result.completed = False
+                return result
             if not _needs_entity_check(item, now):
                 continue
             for arn in sorted(item.event_arns):
@@ -97,7 +125,6 @@ class Reconciler:
                     continue
                 entities = self._health.affected_entities(arn, item.account_id)
                 self._observe(record.to_snapshot(item.account_id, entities, "RECONCILE"), now, result)
-        self._repair_missing_notices({i.group_id for i in items})
         return result
 
     def _repair_missing_notices(self, group_ids: set[str]) -> None:
