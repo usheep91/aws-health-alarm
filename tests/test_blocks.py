@@ -100,3 +100,29 @@ def test_thread_texts():
     mismatch = Intent(IntentKind.MISMATCH, "g1", TID, {"pending": 2})
     assert "API상 미조치 리소스 2개" in render_thread(mismatch, {})
     assert render_thread(Intent(IntentKind.REFRESH, "g1"), {}) is None
+
+
+def test_esc_replaces_ampersand_first():
+    from aha.slack.blocks import esc
+
+    assert esc("<a> & b") == "&lt;a&gt; &amp; b"
+
+
+def test_action_reason_is_escaped():
+    na = Intent(IntentKind.ACTION, "g1", None, {"action": "NOT_APPLICABLE", "actor": "U1", "accounts": [ACCOUNT], "assignee": None, "due": None, "reason": "<!channel> x & y", "channel": "C1"})
+    text = render_thread(na, {})
+    assert "&lt;!channel&gt; x &amp; y" in text
+    assert "<!channel>" not in text
+    assert text.startswith("<@U1> ")
+    due = Intent(IntentKind.ACTION, "g1", None, {"action": "SET_DUE", "actor": "U1", "accounts": [ACCOUNT], "assignee": None, "due": "2027-01-01", "reason": "<!here>", "channel": "C1"})
+    assert "&lt;!here&gt;" in render_thread(due, {})
+
+
+def test_description_is_escaped():
+    _, blocks = render_notice(_event(description="a < b"), [make_item()], {}, CFG, TODAY)
+    texts = [b["text"]["text"] for b in blocks if b["type"] == "section" and "text" in b]
+    assert "a &lt; b" in texts
+
+
+def test_account_name_is_escaped():
+    assert account_label(ACCOUNT, {ACCOUNT: "<evil>"}) == f"{ACCOUNT} (&lt;evil&gt;)"

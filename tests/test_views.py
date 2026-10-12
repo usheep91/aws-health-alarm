@@ -31,3 +31,16 @@ def test_resources_view_caps_entities():
     assert "`db-100`" not in text
     assert "외 5개 리소스" in text
     assert all(len(b["text"]["text"]) <= 3000 for b in view["blocks"])
+
+
+def test_reason_inputs_have_max_length():
+    due = due_date_view({"tracking_ids": ["t1"], "channel": "C1"}, date(2026, 11, 30))
+    assert due["blocks"][1]["element"]["max_length"] == 500
+    assert na_view({"tracking_ids": ["t1"], "channel": "C1"})["blocks"][0]["element"]["max_length"] == 500
+
+
+def test_resources_view_escapes_entity_values():
+    item = make_item()
+    view = resources_view([item], {item.tracking_id: [Entity("<!channel>&x", "PENDING")]}, {})
+    text = "\n".join(b["text"]["text"] for b in view["blocks"])
+    assert "`&lt;!channel&gt;&amp;x`" in text

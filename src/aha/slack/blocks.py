@@ -12,6 +12,11 @@ HEADER_LIMIT = 150
 PRIORITY_EMOJI = {"P1": "🔴", "P2": "🟠", "P3": "🟡"}
 
 
+def esc(text: str) -> str:
+    """Slack mrkdwn 제어문자(&, <, >)를 이스케이프한다."""
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
 def plain(text: str) -> dict:
     return {"type": "plain_text", "text": text, "emoji": True}
 
@@ -37,7 +42,7 @@ def _option(text: str, value: str) -> dict:
 
 def account_label(account_id: str, names: dict[str, str | None]) -> str:
     name = names.get(account_id)
-    return f"{account_id} ({name})" if name else account_id
+    return f"{account_id} ({esc(name)})" if name else account_id
 
 
 def status_text(item: TrackingItem) -> str:
@@ -107,7 +112,7 @@ def _summary(event: EventRecord) -> dict:
     description = event.description or "(설명 없음)"
     if len(description) > SUMMARY_LIMIT:
         description = description[:SUMMARY_LIMIT] + "…"
-    return {"type": "section", "text": mrkdwn(description)}
+    return {"type": "section", "text": mrkdwn(esc(description))}
 
 
 def _account_blocks(items: list[TrackingItem], names: dict[str, str | None]) -> list[dict]:
@@ -193,10 +198,10 @@ def _action_text(d: dict, names: dict[str, str | None]) -> str:
         case "ASSIGN":
             return f"{actor} 님이 {accounts} 담당자를 <@{d['assignee']}> 님으로 지정했습니다"
         case "SET_DUE":
-            return f"{actor} 님이 {accounts} Due Date를 {d['due']}로 변경했습니다 (사유: {d['reason']})"
+            return f"{actor} 님이 {accounts} Due Date를 {d['due']}로 변경했습니다 (사유: {esc(str(d['reason']))})"
         case "RESOLVE_MANUAL":
             return f"{actor} 님이 {accounts} 조치 완료 처리했습니다"
         case "NOT_APPLICABLE":
-            return f"{actor} 님이 {accounts} '해당 없음' 처리했습니다 (사유: {d['reason']})"
+            return f"{actor} 님이 {accounts} '해당 없음' 처리했습니다 (사유: {esc(str(d['reason']))})"
         case _:
             return f"{actor} 님이 {accounts} '조치 필요'로 판정했습니다. Due Date 추적을 시작합니다"

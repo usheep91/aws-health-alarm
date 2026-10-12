@@ -4,7 +4,7 @@ import json
 from datetime import date
 
 from aha.domain.models import Entity, TrackingItem
-from aha.slack.blocks import account_label, mrkdwn, plain, status_text
+from aha.slack.blocks import account_label, esc, mrkdwn, plain, status_text
 
 MAX_RESOURCES = 100
 SECTION_LIMIT = 2900
@@ -29,7 +29,7 @@ def due_date_view(meta: dict, initial: date) -> dict:
                 "type": "input",
                 "block_id": "reason",
                 "label": plain("변경 사유"),
-                "element": {"type": "plain_text_input", "action_id": "value", "multiline": True},
+                "element": {"type": "plain_text_input", "action_id": "value", "multiline": True, "max_length": 500},
             },
         ],
     }
@@ -48,7 +48,7 @@ def na_view(meta: dict) -> dict:
                 "type": "input",
                 "block_id": "reason",
                 "label": plain("해당 없음 사유"),
-                "element": {"type": "plain_text_input", "action_id": "value", "multiline": True},
+                "element": {"type": "plain_text_input", "action_id": "value", "multiline": True, "max_length": 500},
             }
         ],
     }
@@ -64,7 +64,7 @@ def resources_view(
         for entity in entities.get(item.tracking_id, []):
             if shown >= MAX_RESOURCES:
                 break
-            lines.append(f"• `{entity.value}` {entity.status}")
+            lines.append(f"• `{esc(entity.value)}` {entity.status}")
             shown += 1
     total = sum(len(v) for v in entities.values())
     if total > shown:
