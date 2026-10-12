@@ -26,6 +26,7 @@ from aha.domain.models import (
 from aha.domain.repository import ConcurrentModification, Repository
 from aha.domain.state_machine import needs_mismatch_flag, next_state
 
+# OPEN/TRIAGE 대상은 RESOLVED_AUTO에서 재오픈할 때만 발생한다.
 STATE_CHANGE_INTENTS = {
     State.RESOLVED_AUTO: IntentKind.RESOLVED,
     State.CLOSED_BY_AWS: IntentKind.CLOSED_BY_AWS,
@@ -39,18 +40,23 @@ def observe(snap: EventSnapshot, repo: Repository, cfg: Config, now: datetime) -
     tier, _ = classify(snap, cfg)
     if tier is Tier.EXCLUDED:
         return []
-    record, content_changed = _upsert_event(snap, repo, cfg)
+    stored, record, content_changed, stale = _upsert_event(snap, repo, cfg)
     group = _ensure_group(snap, record, repo, cfg)
     tracking_id = tracking_id_of(group.group_id, snap.account_id)
     repo.upsert_entities(tracking_id, snap.entities, now)
     counts = EntityCounts.of(repo.list_entities(tracking_id))
 
+    # 오래된 스냅샷이면 저장된 이벤트 메타데이터로 기한/상태를 계산한다.
+    effective = record.to_snapshot(snap.account_id, snap.entities, snap.source) if stale else snap
     intents = [Intent(IntentKind.CONTENT_UPDATED, group.group_id)] if content_changed else []
     item = repo.get_tracking(tracking_id)
     if item is None:
-        intents += _create(snap, record, group, tier, counts, repo, cfg, now)
+        intents += _create(effective, record, group, tier, counts, repo, cfg, now)
     else:
-        intents += _update(item, snap, record, tier, counts, repo, cfg, now)
+        intents += _update(item, effective, record, tier, counts, repo, cfg, now)
+    # 추적 항목이 저장된 뒤에 이벤트를 기록해야 재시도 시 CONTENT_UPDATED가 유실되지 않는다.
+    if record != stored:
+        repo.put_event(record)
     return intents
 
 
@@ -70,14 +76,16 @@ def _hash(text: str | None) -> str | None:
     return hashlib.sha256(text.encode()).hexdigest() if text else None
 
 
-def _upsert_event(snap: EventSnapshot, repo: Repository, cfg: Config) -> tuple[EventRecord, bool]:
+def _upsert_event(
+    snap: EventSnapshot, repo: Repository, cfg: Config
+) -> tuple[EventRecord | None, EventRecord, bool, bool]:
+    """(저장된 레코드, 적용할 레코드, 내용 변경 여부, 스냅샷이 오래됨 여부). 쓰기는 하지 않는다."""
     prev = repo.get_event(snap.event_arn)
     dynamic = any(e.status in DYNAMIC_STATUSES for e in snap.entities)
     if prev is not None and snap.last_updated_time < prev.last_updated_time:
-        if dynamic and not prev.dynamic_status:
-            prev.dynamic_status = True
-            repo.put_event(prev)
-        return prev, False
+        record = copy.deepcopy(prev)
+        record.dynamic_status = prev.dynamic_status or dynamic
+        return prev, record, False, True
 
     description = snap.description if snap.description is not None else (prev.description if prev else None)
     description_hash = _hash(description)
@@ -99,9 +107,7 @@ def _upsert_event(snap: EventSnapshot, repo: Repository, cfg: Config) -> tuple[E
         description_hash=description_hash,
         dynamic_status=dynamic or (prev.dynamic_status if prev else False),
     )
-    if record != prev:
-        repo.put_event(record)
-    return record, changed
+    return prev, record, changed, False
 
 
 def _ensure_group(snap: EventSnapshot, record: EventRecord, repo: Repository, cfg: Config) -> EventGroup:

@@ -206,3 +206,30 @@ def test_observe_with_retry_recovers_from_conflict():
     repo.fail_next_save = True
     intents = observe_with_retry(make_snapshot(entities=RESOLVED_BOTH), repo, CFG, NOW)
     assert _kinds(intents) == [IntentKind.RESOLVED]
+
+
+def test_retry_preserves_content_updated():
+    repo = FlakyRepository()
+    _initial(repo)
+    repo.fail_next_save = True
+    intents = observe_with_retry(
+        make_snapshot(
+            description="updated",
+            last_updated_time=LATER,
+            entities=(Entity("db-1", "RESOLVED"), Entity("db-2", "PENDING")),
+        ),
+        repo,
+        CFG,
+        NOW,
+    )
+    assert _kinds(intents) == [IntentKind.CONTENT_UPDATED, IntentKind.PROGRESS]
+    assert repo.get_event(ARN).description == "updated"
+
+
+def test_stale_snapshot_does_not_change_tracking():
+    repo = InMemoryRepository()
+    _initial(repo)
+    _initial(repo, start_time=datetime(2027, 2, 28, tzinfo=UTC), last_updated_time=LATER)
+    stale = _initial(repo, last_updated_time=datetime(2026, 10, 1, tzinfo=UTC))
+    assert stale == []
+    assert repo.get_tracking(TID).due_date == date(2027, 2, 28)
