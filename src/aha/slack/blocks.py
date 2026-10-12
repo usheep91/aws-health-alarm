@@ -166,7 +166,7 @@ def render_thread(intent: Intent, names: dict[str, str | None]) -> str | None:
     d = intent.data
     match intent.kind:
         case IntentKind.NEW:
-            return f"신규 영향 계정 추가: {label}"
+            return None  # spec 9.3: Notice 갱신에 신규 계정 줄이 이미 표시됨
         case IntentKind.CONTENT_UPDATED:
             return "AWS가 이벤트 내용을 갱신했습니다. 상단 요약을 확인하세요."
         case IntentKind.DUE_CHANGED if d.get("kept_manual"):

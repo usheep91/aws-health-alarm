@@ -27,13 +27,13 @@ def test_new_intent_posts_notice_once():
     assert (notice.channel_id, notice.ts, notice.posted_channel_id) == ("C0SHADOW", slack.posts[0]["ts"], "C0SHADOW")
 
 
-def test_second_account_updates_notice_and_threads():
+def test_second_account_updates_notice_without_thread():
     _, slack, notifier, intents = _setup(accounts=(ACCOUNT, OTHER_ACCOUNT))
     notifier.handle(intents[0], TODAY)
     notifier.handle(intents[1], TODAY)
     assert len(slack.updates) == 1
-    assert slack.posts[1]["thread_ts"] == slack.posts[0]["ts"]
-    assert slack.posts[1]["text"] == f"신규 영향 계정 추가: {OTHER_ACCOUNT}"
+    assert len(slack.posts) == 1
+    assert slack.posts[0]["thread_ts"] is None
 
 
 def test_intents_are_scoped_to_their_channel():

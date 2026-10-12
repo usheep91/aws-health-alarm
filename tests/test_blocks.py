@@ -138,3 +138,7 @@ def test_triage_required_action_text():
 
 def test_unknown_action_text_is_generic():
     assert render_thread(_action("SOMETHING_ELSE"), {}) == f"<@U1> 님이 {ACCOUNT} 항목을 갱신했습니다 (SOMETHING_ELSE)"
+
+
+def test_new_intent_has_no_thread_text():
+    assert render_thread(Intent(IntentKind.NEW, "g1", TID), {}) is None
