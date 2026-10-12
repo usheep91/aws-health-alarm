@@ -61,3 +61,20 @@ def test_channel_errors(error):
 def test_other_errors_propagate():
     with pytest.raises(SlackApiError):
         SlackGateway(StubClient(_error(200, "invalid_blocks"))).post("C1", "hi")
+
+
+def test_server_errors_are_retryable():
+    with pytest.raises(SlackRetryable):
+        SlackGateway(StubClient(_error(503, "service_unavailable"))).post("C1", "hi")
+
+
+def test_retry_after_defaults_to_one():
+    with pytest.raises(SlackRetryable) as exc:
+        SlackGateway(StubClient(_error(429, "ratelimited"))).post("C1", "hi")
+    assert exc.value.retry_after == 1
+
+
+def test_non_integer_retry_after_defaults_to_one():
+    with pytest.raises(SlackRetryable) as exc:
+        SlackGateway(StubClient(_error(429, "ratelimited", {"Retry-After": "soon"}))).post("C1", "hi")
+    assert exc.value.retry_after == 1

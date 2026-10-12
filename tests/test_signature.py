@@ -1,6 +1,8 @@
 import hashlib
 import hmac
 
+import pytest
+
 from aha.slack.signature import verify_signature
 
 SECRET = "test-signing-secret"
@@ -29,3 +31,11 @@ def test_expired_timestamp_rejected():
 
 def test_non_numeric_timestamp_rejected():
     assert not verify_signature(SECRET, "abc", BODY, "v0=00", NOW)
+
+
+@pytest.mark.parametrize(
+    ("timestamp", "signature"),
+    [(str(int(NOW)), "v0=é"), ("", "v0=00"), (str(int(NOW)), ""), (None, "v0=00"), (str(int(NOW)), None)],
+)
+def test_malformed_headers_are_rejected_without_raising(timestamp, signature):
+    assert verify_signature(SECRET, timestamp, BODY, signature, NOW) is False

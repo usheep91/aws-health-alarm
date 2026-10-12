@@ -18,6 +18,13 @@ class SlackChannelError(Exception):
     """대상 채널에 게시할 수 없음 (라우팅 설정 오류)."""
 
 
+def _retry_after(headers) -> int:
+    try:
+        return int((headers or {}).get("Retry-After", 1))
+    except (TypeError, ValueError):
+        return 1
+
+
 class SlackGateway:
     def __init__(self, client: WebClient) -> None:
         self._client = client
@@ -37,8 +44,9 @@ class SlackGateway:
             return fn(**{k: v for k, v in kwargs.items() if v is not None})
         except SlackApiError as e:
             error = e.response.get("error")
-            if e.response.status_code == 429 or error == "ratelimited":
-                raise SlackRetryable(int(e.response.headers.get("Retry-After", 1))) from e
+            status = e.response.status_code or 0
+            if status == 429 or status >= 500 or error == "ratelimited":
+                raise SlackRetryable(_retry_after(e.response.headers)) from e
             if error in CHANNEL_ERRORS:
                 raise SlackChannelError(error) from e
             raise
