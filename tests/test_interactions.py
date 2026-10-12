@@ -118,3 +118,44 @@ def test_action_from_fallback_channel_maps_to_logical_channel():
     service.handle(_block_action({"action_id": "assign", "block_id": f"grp:{GID}", "selected_user": "U2"}, channel="C0DEFAULT"))
     assert repo.get_tracking(TID).assignee == "U2"
     assert pub.intents[0].data["channel"] == "C0SHADOW"
+
+
+def test_logical_channel_prefers_clicked_message():
+    repo, _, pub, service = _setup()
+    repo.put_notice(Notice(GID, "C0DEFAULT", "1.0", "C0DEFAULT"))
+    repo.put_notice(Notice(GID, "C0SHADOW", "2.0", "C0DEFAULT"))
+    payload = _block_action({"action_id": "assign", "block_id": f"grp:{GID}", "selected_user": "U2"}, channel="C0DEFAULT")
+    payload["container"] = {"message_ts": "2.0"}
+    service.handle(payload)
+    assert repo.get_tracking(TID).assignee == "U2"
+    assert pub.intents[0].data["channel"] == "C0SHADOW"
+
+
+def test_set_due_modal_metadata_is_compact():
+    _, slack, _, service = _setup(accounts=(ACCOUNT, OTHER_ACCOUNT))
+    service.handle(_group_action("set_due"))
+    meta = json.loads(slack.views[0]["view"]["private_metadata"])
+    assert meta == {"group_id": GID, "channel": "C0SHADOW", "scope": "active"}
+
+
+def test_group_scoped_submission_applies_to_active_items():
+    repo, _, _, service = _setup(accounts=(ACCOUNT, OTHER_ACCOUNT))
+    meta = {"group_id": GID, "channel": "C0SHADOW", "scope": "active"}
+    service.handle(_submission("set_due_modal", meta, _due_values("2026-12-31")))
+    assert repo.get_tracking(TID).due_date == repo.get_tracking(OTHER_TID).due_date == date(2026, 12, 31)
+
+
+def test_triage_na_submission_applies_only_to_triage_items():
+    repo, slack, _, service = _setup(actionability="ACTION_MAY_BE_REQUIRED")
+    service.handle(_group_action("triage_na"))
+    meta = json.loads(slack.views[0]["view"]["private_metadata"])
+    assert meta["scope"] == "triage"
+    service.handle(_submission("na_modal", meta, {"reason": {"value": {"value": "대상 아님"}}}))
+    assert repo.get_tracking(TID).state is State.NOT_APPLICABLE
+
+
+def test_set_due_submission_requires_reason():
+    _, _, _, service = _setup()
+    meta = {"tracking_ids": [TID], "channel": "C0SHADOW"}
+    result = service.handle(_submission("set_due_modal", meta, _due_values("2026-12-31", reason="  ")))
+    assert result == {"response_action": "errors", "errors": {"reason": "변경 사유를 입력하세요"}}
