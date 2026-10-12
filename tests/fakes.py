@@ -81,3 +81,45 @@ class InMemoryRepository:
 
     def set_cursor(self, name, value):
         self.cursors[name] = value
+
+
+class RecordingPublisher:
+    def __init__(self):
+        self.intents = []
+
+    def publish(self, intents):
+        self.intents.extend(intents)
+
+
+class FakeHealth:
+    def __init__(self, events, accounts, entities, descriptions=None):
+        self.events = events
+        self.accounts = accounts
+        self.entities = entities
+        self.descriptions = descriptions or {}
+        self.calls = []
+
+    def iter_events(self, *, updated_since, status_codes):
+        self.calls.append((updated_since, tuple(status_codes)))
+        return iter(self.events)
+
+    def affected_accounts(self, event_arn):
+        return self.accounts.get(event_arn, [])
+
+    def event_description(self, event_arn, account_id):
+        return self.descriptions.get(event_arn)
+
+    def affected_entities(self, event_arn, account_id):
+        return list(self.entities.get((event_arn, account_id), []))
+
+
+class MapRouter:
+    def __init__(self, mapping, names=None):
+        self.mapping = mapping
+        self.names = names or {}
+
+    def channels_for(self, account_id, personas):
+        return [self.mapping[account_id]]
+
+    def account_name(self, account_id):
+        return self.names.get(account_id)
