@@ -5,15 +5,33 @@ from datetime import datetime, timedelta
 
 from aha.adapters.health_client import to_snapshot
 from aha.config import Config
-from aha.domain.models import EventSnapshot, Intent, IntentKind, State
+from aha.domain.models import EventSnapshot, Intent, IntentKind, State, TrackingItem
+from aha.domain.state_machine import MISMATCH_GRACE
 from aha.domain.observe import observe_with_retry
 from aha.domain.repository import Repository
 from aha.routing import Router
 
 CURSOR_OVERLAP = timedelta(hours=2)
 EVENT_CURSOR = "event"
-# RESOLVED_AUTO는 재발 감지, RESOLVED_MANUAL은 불일치 검증을 위해 계속 조회한다.
+# TRIAGE/OPEN은 항상 조회한다. RESOLVED_AUTO는 REOPEN_WATCH(해결 후 30일) 동안만 재발 감지를 위해,
+# RESOLVED_MANUAL은 불일치가 아직 플래그되지 않았고 MISMATCH_WATCH(유예 기간 + 12시간) 동안만 조회한다.
+# 감시 기간이 지난 해결 항목은 Health API 호출을 늘리지 않도록 더 이상 조회하지 않는다.
 ENTITY_SWEEP_STATES = (State.TRIAGE, State.OPEN, State.RESOLVED_AUTO, State.RESOLVED_MANUAL)
+REOPEN_WATCH = timedelta(days=30)
+MISMATCH_WATCH = MISMATCH_GRACE + timedelta(hours=12)
+
+
+def _needs_entity_check(item: TrackingItem, now: datetime) -> bool:
+    if item.state in (State.TRIAGE, State.OPEN):
+        return True
+    if item.resolved_at is None:
+        return False
+    age = now - item.resolved_at
+    if item.state is State.RESOLVED_AUTO:
+        return age <= REOPEN_WATCH
+    if item.state is State.RESOLVED_MANUAL:
+        return not item.verification_mismatch and age <= MISMATCH_WATCH
+    return False
 
 
 @dataclass
@@ -71,7 +89,7 @@ class Reconciler:
         result = ReconcileResult()
         items = [i for state in ENTITY_SWEEP_STATES for i in self._repo.list_by_state(state)]
         for item in items:
-            if item.state is State.RESOLVED_MANUAL and item.verification_mismatch:
+            if not _needs_entity_check(item, now):
                 continue
             for arn in sorted(item.event_arns):
                 record = self._repo.get_event(arn)

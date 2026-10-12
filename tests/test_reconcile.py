@@ -1,7 +1,7 @@
 from datetime import UTC, datetime, timedelta
 
 from aha.domain.grouping import correlation_key, group_id_for
-from aha.domain.models import Entity, IntentKind, Notice
+from aha.domain.models import Entity, IntentKind, Notice, State, tracking_id_of
 from aha.reconcile import CURSOR_OVERLAP, ReconcileResult, Reconciler
 from aha.routing import StaticRouter
 from tests.factories import ACCOUNT, ARN, NOW, make_config, make_snapshot
@@ -90,3 +90,41 @@ def test_entity_sweep_republishes_missing_notice():
     pub.intents.clear()
     rec.run("entity", NOW + timedelta(hours=12))
     assert pub.intents == []
+
+
+def test_entity_sweep_reopens_recently_resolved_item():
+    health = _health()
+    rec, repo, pub = _reconciler(health)
+    rec.run("event", NOW)
+    repo.put_notice(Notice(GID, "C0SHADOW", "1.0", "C0SHADOW"))
+    health.entities[(ARN, ACCOUNT)] = [Entity("db-1", "RESOLVED")]
+    rec.run("entity", NOW + timedelta(hours=6))
+    health.entities[(ARN, ACCOUNT)] = [Entity("db-1", "RESOLVED"), Entity("db-2", "PENDING")]
+    pub.intents.clear()
+    rec.run("entity", NOW + timedelta(days=10))
+    assert [i.kind for i in pub.intents] == [IntentKind.REOPENED]
+
+
+def test_entity_sweep_stops_checking_old_resolved_items():
+    health = _health()
+    rec, repo, pub = _reconciler(health)
+    rec.run("event", NOW)
+    repo.put_notice(Notice(GID, "C0SHADOW", "1.0", "C0SHADOW"))
+    health.entities[(ARN, ACCOUNT)] = [Entity("db-1", "RESOLVED")]
+    rec.run("entity", NOW + timedelta(hours=6))
+    health.entities[(ARN, ACCOUNT)] = [Entity("db-1", "RESOLVED"), Entity("db-2", "PENDING")]
+    pub.intents.clear()
+    result = rec.run("entity", NOW + timedelta(days=31))
+    assert result.observations == 0
+    assert pub.intents == []
+
+
+def test_entity_sweep_stops_checking_manual_resolution_after_watch_window():
+    health = _health()
+    rec, repo, pub = _reconciler(health)
+    rec.run("event", NOW)
+    item = repo.get_tracking(tracking_id_of(GID, ACCOUNT))
+    item.state, item.resolved_at, item.manual_resolved_at = State.RESOLVED_MANUAL, NOW, NOW
+    repo.save_tracking(item)
+    assert rec.run("entity", NOW + timedelta(hours=80)).observations == 1
+    assert rec.run("entity", NOW + timedelta(hours=85)).observations == 0
