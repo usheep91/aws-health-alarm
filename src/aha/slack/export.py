@@ -12,7 +12,7 @@ FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
 
 def _safe(value: str) -> str:
     """스프레드시트 수식 주입 방지: 수식 문자로 시작하는 셀 앞에 작은따옴표를 붙인다."""
-    return f"'{value}" if value.startswith(FORMULA_PREFIXES) else value
+    return f"'{value}" if value.lstrip().startswith(FORMULA_PREFIXES) else value
 
 
 def build_resource_csv(

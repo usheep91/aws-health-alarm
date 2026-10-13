@@ -105,3 +105,66 @@ def test_export_without_items_posts_notice_to_dm():
     assert [(p["channel"], p["text"]) for p in slack.posts] == [
         ("DU7", "내보낼 리소스가 없습니다: RDS · AWS_RDS_PLANNED_LIFECYCLE_EVENT")
     ]
+
+
+def _api_error(error="missing_scope"):
+    from slack_sdk.errors import SlackApiError
+    from slack_sdk.web import SlackResponse
+
+    response = SlackResponse(
+        client=None, http_verb="POST", api_url="https://slack.com/api/x", req_args={},
+        data={"ok": False, "error": error}, headers={}, status_code=200,
+    )
+    return SlackApiError("failed", response)
+
+
+def test_export_open_dm_failure_is_swallowed():
+    repo, slack, notifier, _ = _setup()
+    slack.open_dm_error = _api_error("cannot_dm_bot")
+    notifier.handle(_export_intent(), TODAY)
+    assert slack.files == [] and slack.posts == [] and slack.updates == []
+
+
+def test_export_upload_failure_is_swallowed():
+    from slack_sdk.errors import SlackRequestError
+
+    for exc in (_api_error(), SlackRequestError("bad"), __import__("aha.adapters.slack_client", fromlist=["x"]).SlackChannelError("x")):
+        _, slack, notifier, _ = _setup()
+        slack.upload_error = exc
+        notifier.handle(_export_intent(), TODAY)
+        assert slack.posts == [] and slack.updates == []
+
+
+def test_export_retryable_error_propagates():
+    import pytest
+
+    from aha.adapters.slack_client import SlackRetryable
+
+    _, slack, notifier, _ = _setup()
+    slack.upload_error = SlackRetryable(3)
+    with pytest.raises(SlackRetryable):
+        notifier.handle(_export_intent(), TODAY)
+
+
+def test_export_missing_group_still_replies_to_requester():
+    slack = FakeSlack()
+    notifier = Notifier(InMemoryRepository(), slack, StaticRouter("C0SHADOW"), CFG)
+    notifier.handle(_export_intent(), TODAY)
+    assert [(p["channel"], p["text"]) for p in slack.posts] == [("DU7", "내보낼 리소스가 없습니다.")]
+
+
+def test_export_includes_terminal_items():
+    import csv
+    import io
+
+    repo, slack, notifier, _ = _setup()
+    item = repo.list_group_tracking(GID)[0]
+    from dataclasses import replace
+
+    from aha.domain.models import State
+
+    repo.save_tracking(replace(item, state=State.RESOLVED_MANUAL))
+    notifier.handle(_export_intent(), TODAY)
+    rows = list(csv.reader(io.StringIO(slack.files[0]["content"].decode("utf-8-sig"))))[1:]
+    assert [r[6] for r in rows] == ["db-1", "db-2"]
+    assert rows[0][2] == "RESOLVED_MANUAL"

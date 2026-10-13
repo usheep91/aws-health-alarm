@@ -67,3 +67,10 @@ def test_formula_injection_is_neutralised():
 
 def test_filename():
     assert export_filename(_event(), date(2026, 10, 13)) == "AWS_RDS_PLANNED_LIFECYCLE_EVENT_ap-northeast-2_20261013.csv"
+
+
+def test_leading_whitespace_formula_is_neutralised():
+    item = make_item()
+    entities = {item.tracking_id: [Entity(" =cmd", "PENDING")]}
+    rows = _rows(build_resource_csv(_event(), [item], entities, {}))[1:]
+    assert rows[0][6] == "' =cmd"

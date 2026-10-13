@@ -3,6 +3,8 @@ from __future__ import annotations
 import logging
 from datetime import date
 
+from slack_sdk.errors import SlackApiError, SlackRequestError
+
 from aha.adapters.slack_client import SlackChannelError
 from aha.config import Config
 from aha.domain.models import EventRecord, Intent, IntentKind, Notice, TrackingItem
@@ -26,11 +28,11 @@ class Notifier:
     def handle(self, intent: Intent, today: date) -> None:
         group = self._repo.get_group(intent.group_id)
         event = self._repo.get_event(group.primary_arn) if group else None
+        if intent.kind is IntentKind.EXPORT:
+            self._export_best_effort(intent, event, today)
+            return
         if event is None:
             logger.warning("group or event missing for intent", extra={"group_id": intent.group_id})
-            return
-        if intent.kind is IntentKind.EXPORT:
-            self._export(intent, event, today)
             return
         notices = {n.channel_id: n for n in self._repo.get_notices(intent.group_id)}
         by_channel: dict[str, list[TrackingItem]] = {}
@@ -41,7 +43,21 @@ class Notifier:
             if self._concerns(intent, channel, items):
                 self._sync(intent, event, channel, items, notices.get(channel), today)
 
-    def _export(self, intent: Intent, event: EventRecord, today: date) -> None:
+    def _export_best_effort(self, intent: Intent, event: EventRecord | None, today: date) -> None:
+        """내보내기는 best-effort: 영구 실패는 로그만 남기고 재시도하지 않는다(SlackRetryable만 전파)."""
+        try:
+            self._export(intent, event, today)
+        except (SlackApiError, SlackRequestError, SlackChannelError) as e:
+            logger.warning(
+                "csv export failed",
+                extra={"group_id": intent.group_id, "requester": intent.data.get("requester"), "error": str(e)},
+            )
+
+    def _export(self, intent: Intent, event: EventRecord | None, today: date) -> None:
+        if event is None:
+            dm = self._slack.open_dm(intent.data["requester"])
+            self._slack.post(dm, "내보낼 리소스가 없습니다.")
+            return
         items = items_for_channel(
             self._repo.list_group_tracking(intent.group_id), intent.data["channel"], self._router, event.personas
         )
