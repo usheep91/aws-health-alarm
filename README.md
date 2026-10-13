@@ -40,6 +40,7 @@ pytest -q
 - 최초 배포 후 몇 시간 동안은 reconcile 실행 이력이 쌓이지 않아 heartbeat 알람이 한 번 울릴 수 있다. 첫 sweep이 성공하면 해소된다.
 - Slack 시크릿을 고객 관리형 KMS 키(CMK)로 암호화했다면 notifier/interaction Lambda 역할에 해당 키의 `kms:Decrypt` 권한을 추가해야 한다.
 - dev DynamoDB 테이블은 삭제 보호(`deletion_protection_enabled`)가 켜져 있다. `terraform destroy` 전에 명시적으로 해제해야 한다.
+- CSV 내보내기를 쓰려면 Slack App에 `files:write`, `im:write` 스코프가 필요하다. 스코프를 추가한 뒤 워크스페이스에 앱을 다시 설치한다. Bot token이 바뀌면 Secrets Manager 시크릿을 `put-secret-value`로 갱신하고, 이미 떠 있는(warm) Lambda는 콜드 스타트 전까지 이전 토큰을 유지하므로 재배포하거나 함수 설정을 업데이트해 갱신한다.
 - 프로바이더 버전은 `infra/envs/dev/.terraform.lock.hcl`로 고정되어 있다. 업그레이드는 `init -upgrade` 후 lock 파일 변경을 검토해 커밋한다.
 
 ## 섀도 운영 (P1, 2주)
