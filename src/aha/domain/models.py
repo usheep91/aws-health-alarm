@@ -45,6 +45,7 @@ class IntentKind(StrEnum):
     PROMOTED = "PROMOTED"
     ACTION = "ACTION"
     REFRESH = "REFRESH"
+    EXPORT = "EXPORT"
 
 
 # 리소스 상태 중 이 값이 하나라도 있으면 해당 이벤트는 동적 상태 업데이트를 지원한다.

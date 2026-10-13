@@ -75,3 +75,33 @@ def test_refresh_updates_without_thread():
     notifier.handle(Intent(IntentKind.REFRESH, GID), TODAY)
     assert len(slack.updates) == 1
     assert len(slack.posts) == 1
+
+
+def _export_intent(channel="C0SHADOW"):
+    return Intent(IntentKind.EXPORT, GID, None, {"channel": channel, "requester": "U7"})
+
+
+def test_export_uploads_csv_to_requester_dm():
+    import csv
+    import io
+
+    repo, slack, notifier, intents = _setup(accounts=(ACCOUNT, OTHER_ACCOUNT))
+    notifier.handle(_export_intent(), TODAY)
+    assert len(slack.files) == 1
+    f = slack.files[0]
+    assert f["channel"] == "DU7"
+    assert f["filename"] == f"AWS_RDS_PLANNED_LIFECYCLE_EVENT_ap-northeast-2_{TODAY:%Y%m%d}.csv"
+    rows = list(csv.reader(io.StringIO(f["content"].decode("utf-8-sig"))))[1:]
+    assert sorted((r[0], r[6]) for r in rows) == sorted((a, e) for a in (ACCOUNT, OTHER_ACCOUNT) for e in ("db-1", "db-2"))
+    assert "계정 2개, 리소스 4개" in f["initial_comment"]
+    assert slack.posts == [] and slack.updates == []
+    assert repo.get_notices(GID) == []
+
+
+def test_export_without_items_posts_notice_to_dm():
+    _, slack, notifier, _ = _setup(accounts=(ACCOUNT,), router=MapRouter({ACCOUNT: "C1"}))
+    notifier.handle(_export_intent("C2"), TODAY)
+    assert slack.files == []
+    assert [(p["channel"], p["text"]) for p in slack.posts] == [
+        ("DU7", "내보낼 리소스가 없습니다: RDS · AWS_RDS_PLANNED_LIFECYCLE_EVENT")
+    ]

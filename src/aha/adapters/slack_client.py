@@ -38,6 +38,19 @@ class SlackGateway:
     def open_view(self, trigger_id: str, view: dict) -> None:
         self._call(self._client.views_open, trigger_id=trigger_id, view=view)
 
+    def open_dm(self, user_id: str) -> str:
+        return self._call(self._client.conversations_open, users=user_id)["channel"]["id"]
+
+    def upload_file(self, channel: str, filename: str, content: bytes, title: str, initial_comment: str) -> None:
+        self._call(
+            self._client.files_upload_v2,
+            channel=channel,
+            filename=filename,
+            content=content,
+            title=title,
+            initial_comment=initial_comment,
+        )
+
     @staticmethod
     def _call(fn, **kwargs):
         try:

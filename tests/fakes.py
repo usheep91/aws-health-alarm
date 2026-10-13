@@ -134,6 +134,8 @@ class FakeSlack:
         self.posts = []
         self.updates = []
         self.views = []
+        self.dms = []
+        self.files = []
 
     def post(self, channel, text, blocks=None, thread_ts=None):
         if channel in self.fail_channels:
@@ -147,3 +149,12 @@ class FakeSlack:
 
     def open_view(self, trigger_id, view):
         self.views.append({"trigger_id": trigger_id, "view": view})
+
+    def open_dm(self, user_id):
+        self.dms.append(user_id)
+        return f"D{user_id}"
+
+    def upload_file(self, channel, filename, content, title, initial_comment):
+        self.files.append(
+            {"channel": channel, "filename": filename, "content": content, "title": title, "initial_comment": initial_comment}
+        )

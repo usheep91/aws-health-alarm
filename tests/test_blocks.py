@@ -142,3 +142,7 @@ def test_unknown_action_text_is_generic():
 
 def test_new_intent_has_no_thread_text():
     assert render_thread(Intent(IntentKind.NEW, "g1", TID), {}) is None
+
+
+def test_render_thread_export_is_none():
+    assert render_thread(Intent(IntentKind.EXPORT, "g1", None, {"channel": "C1", "requester": "U1"}), {}) is None

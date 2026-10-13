@@ -52,3 +52,19 @@ def test_resources_view_never_emits_empty_section():
     chunks = _chunks(["x" * 3000])
     assert chunks == ["x" * 3000]
     assert all(c for c in _chunks(["a", "y" * 3000, "b"]))
+
+
+def test_resources_view_export_button_is_first_block():
+    item = make_item()
+    view = resources_view([item], {}, {}, export_value='{"group_id": "g1", "channel": "C1"}')
+    first = view["blocks"][0]
+    assert first["type"] == "actions"
+    assert first["block_id"] == "resources_export"
+    button = first["elements"][0]
+    assert (button["action_id"], button["text"]["text"]) == ("export_resources", "CSV 다운로드")
+    assert button["value"] == '{"group_id": "g1", "channel": "C1"}'
+
+
+def test_resources_view_without_export_value_has_no_button():
+    view = resources_view([make_item()], {}, {})
+    assert all(b["type"] != "actions" for b in view["blocks"])

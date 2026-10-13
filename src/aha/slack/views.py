@@ -55,7 +55,10 @@ def na_view(meta: dict) -> dict:
 
 
 def resources_view(
-    items: list[TrackingItem], entities: dict[str, list[Entity]], names: dict[str, str | None]
+    items: list[TrackingItem],
+    entities: dict[str, list[Entity]],
+    names: dict[str, str | None],
+    export_value: str | None = None,
 ) -> dict:
     lines: list[str] = []
     shown = 0
@@ -72,6 +75,17 @@ def resources_view(
     blocks = [{"type": "section", "text": mrkdwn(chunk)} for chunk in _chunks(lines)] or [
         {"type": "section", "text": mrkdwn("(리소스 없음)")}
     ]
+    if export_value is not None:
+        blocks.insert(
+            0,
+            {
+                "type": "actions",
+                "block_id": "resources_export",
+                "elements": [
+                    {"type": "button", "action_id": "export_resources", "text": plain("CSV 다운로드"), "value": export_value}
+                ],
+            },
+        )
     return {"type": "modal", "title": plain("영향 리소스"), "close": plain("닫기"), "blocks": blocks}
 
 

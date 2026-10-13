@@ -38,6 +38,12 @@ class StubClient:
     def views_open(self, **kwargs):
         return self._call("views_open", kwargs, {"ok": True})
 
+    def conversations_open(self, **kwargs):
+        return self._call("conversations_open", kwargs, {"channel": {"id": "D1"}})
+
+    def files_upload_v2(self, **kwargs):
+        return self._call("files_upload_v2", kwargs, {"ok": True})
+
 
 def test_post_drops_none_arguments():
     client = StubClient()
@@ -78,3 +84,23 @@ def test_non_integer_retry_after_defaults_to_one():
     with pytest.raises(SlackRetryable) as exc:
         SlackGateway(StubClient(_error(429, "ratelimited", {"Retry-After": "soon"}))).post("C1", "hi")
     assert exc.value.retry_after == 1
+
+
+def test_open_dm_returns_channel_id():
+    client = StubClient()
+    assert SlackGateway(client).open_dm("U1") == "D1"
+    assert client.calls == [("conversations_open", {"users": "U1"})]
+
+
+def test_upload_file_passes_arguments():
+    client = StubClient()
+    SlackGateway(client).upload_file("D1", "a.csv", b"x", title="t", initial_comment="c")
+    assert client.calls == [
+        ("files_upload_v2", {"channel": "D1", "filename": "a.csv", "content": b"x", "title": "t", "initial_comment": "c"})
+    ]
+
+
+def test_upload_channel_error_is_classified():
+    gateway = SlackGateway(StubClient(_error(200, "channel_not_found")))
+    with pytest.raises(SlackChannelError):
+        gateway.upload_file("D1", "a.csv", b"x", title="t", initial_comment="c")

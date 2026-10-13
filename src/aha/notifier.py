@@ -5,9 +5,10 @@ from datetime import date
 
 from aha.adapters.slack_client import SlackChannelError
 from aha.config import Config
-from aha.domain.models import EventRecord, Intent, Notice, TrackingItem
+from aha.domain.models import EventRecord, Intent, IntentKind, Notice, TrackingItem
 from aha.domain.repository import Repository
-from aha.routing import Router
+from aha.routing import Router, items_for_channel
+from aha.slack.export import build_resource_csv, export_filename
 from aha.slack.blocks import render_notice, render_thread
 
 logger = logging.getLogger(__name__)
@@ -28,6 +29,9 @@ class Notifier:
         if event is None:
             logger.warning("group or event missing for intent", extra={"group_id": intent.group_id})
             return
+        if intent.kind is IntentKind.EXPORT:
+            self._export(intent, event, today)
+            return
         notices = {n.channel_id: n for n in self._repo.get_notices(intent.group_id)}
         by_channel: dict[str, list[TrackingItem]] = {}
         for item in self._repo.list_group_tracking(intent.group_id):
@@ -36,6 +40,25 @@ class Notifier:
         for channel, items in by_channel.items():
             if self._concerns(intent, channel, items):
                 self._sync(intent, event, channel, items, notices.get(channel), today)
+
+    def _export(self, intent: Intent, event: EventRecord, today: date) -> None:
+        items = items_for_channel(
+            self._repo.list_group_tracking(intent.group_id), intent.data["channel"], self._router, event.personas
+        )
+        dm = self._slack.open_dm(intent.data["requester"])
+        if not items:
+            self._slack.post(dm, f"내보낼 리소스가 없습니다: {event.service} · {event.event_type_code}")
+            return
+        entities = {i.tracking_id: self._repo.list_entities(i.tracking_id) for i in items}
+        names = {i.account_id: self._router.account_name(i.account_id) for i in items}
+        total = sum(len(v) for v in entities.values())
+        self._slack.upload_file(
+            dm,
+            export_filename(event, today),
+            build_resource_csv(event, items, entities, names),
+            title=f"{event.service} · {event.event_type_code} 영향 리소스",
+            initial_comment=f"{event.event_type_code} ({event.event_region}) 영향 리소스 목록입니다. 계정 {len(items)}개, 리소스 {total}개.",
+        )
 
     @staticmethod
     def _concerns(intent: Intent, channel: str, items: list[TrackingItem]) -> bool:
