@@ -7,7 +7,7 @@ from datetime import date, datetime
 from aha.config import Config
 from aha.domain.actions import ActionKind, InvalidAction, apply_group_action
 from aha.domain.due_date import to_local_date
-from aha.domain.models import State, TrackingItem, split_tracking_id
+from aha.domain.models import Intent, IntentKind, State, TrackingItem, split_tracking_id
 from aha.domain.repository import Repository
 from aha.routing import Router, items_for_channel
 from aha.slack.views import due_date_view, na_view, resources_view
@@ -48,6 +48,12 @@ class InteractionService:
         user = payload["user"]["id"]
         trigger = payload.get("trigger_id")
         if action_id == "dashboard":
+            return
+        if action_id == "export_resources":  # 모달 안의 클릭: payload에 channel이 없다
+            meta = json.loads(action["value"])
+            self._publisher.publish(
+                [Intent(IntentKind.EXPORT, meta["group_id"], None, {"channel": meta["channel"], "requester": user})]
+            )
             return
 
         if action_id == "account_menu":
@@ -135,4 +141,5 @@ class InteractionService:
         items = self._channel_items(group_id, channel, active_only=False)
         entities = {i.tracking_id: self._repo.list_entities(i.tracking_id) for i in items}
         names = {i.account_id: self._router.account_name(i.account_id) for i in items}
-        return resources_view(items, entities, names)
+        export_value = json.dumps({"group_id": group_id, "channel": channel})
+        return resources_view(items, entities, names, export_value=export_value)

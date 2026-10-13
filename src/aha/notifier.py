@@ -3,11 +3,14 @@ from __future__ import annotations
 import logging
 from datetime import date
 
+from slack_sdk.errors import SlackApiError, SlackRequestError
+
 from aha.adapters.slack_client import SlackChannelError
 from aha.config import Config
-from aha.domain.models import EventRecord, Intent, Notice, TrackingItem
+from aha.domain.models import EventRecord, Intent, IntentKind, Notice, TrackingItem
 from aha.domain.repository import Repository
-from aha.routing import Router
+from aha.routing import Router, items_for_channel
+from aha.slack.export import build_resource_csv, export_filename
 from aha.slack.blocks import render_notice, render_thread
 
 logger = logging.getLogger(__name__)
@@ -25,6 +28,9 @@ class Notifier:
     def handle(self, intent: Intent, today: date) -> None:
         group = self._repo.get_group(intent.group_id)
         event = self._repo.get_event(group.primary_arn) if group else None
+        if intent.kind is IntentKind.EXPORT:
+            self._export_best_effort(intent, event, today)
+            return
         if event is None:
             logger.warning("group or event missing for intent", extra={"group_id": intent.group_id})
             return
@@ -36,6 +42,39 @@ class Notifier:
         for channel, items in by_channel.items():
             if self._concerns(intent, channel, items):
                 self._sync(intent, event, channel, items, notices.get(channel), today)
+
+    def _export_best_effort(self, intent: Intent, event: EventRecord | None, today: date) -> None:
+        """내보내기는 best-effort: 영구 실패는 로그만 남기고 재시도하지 않는다(SlackRetryable만 전파)."""
+        try:
+            self._export(intent, event, today)
+        except (SlackApiError, SlackRequestError, SlackChannelError) as e:
+            logger.warning(
+                "csv export failed",
+                extra={"group_id": intent.group_id, "requester": intent.data.get("requester"), "error": str(e)},
+            )
+
+    def _export(self, intent: Intent, event: EventRecord | None, today: date) -> None:
+        if event is None:
+            dm = self._slack.open_dm(intent.data["requester"])
+            self._slack.post(dm, "내보낼 리소스가 없습니다.")
+            return
+        items = items_for_channel(
+            self._repo.list_group_tracking(intent.group_id), intent.data["channel"], self._router, event.personas
+        )
+        dm = self._slack.open_dm(intent.data["requester"])
+        if not items:
+            self._slack.post(dm, f"내보낼 리소스가 없습니다: {event.service} · {event.event_type_code}")
+            return
+        entities = {i.tracking_id: self._repo.list_entities(i.tracking_id) for i in items}
+        names = {i.account_id: self._router.account_name(i.account_id) for i in items}
+        total = sum(len(v) for v in entities.values())
+        self._slack.upload_file(
+            dm,
+            export_filename(event, today),
+            build_resource_csv(event, items, entities, names),
+            title=f"{event.service} · {event.event_type_code} 영향 리소스",
+            initial_comment=f"{event.event_type_code} ({event.event_region}) 영향 리소스 목록입니다. 계정 {len(items)}개, 리소스 {total}개.",
+        )
 
     @staticmethod
     def _concerns(intent: Intent, channel: str, items: list[TrackingItem]) -> bool:

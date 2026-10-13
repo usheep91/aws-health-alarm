@@ -159,3 +159,33 @@ def test_set_due_submission_requires_reason():
     meta = {"tracking_ids": [TID], "channel": "C0SHADOW"}
     result = service.handle(_submission("set_due_modal", meta, _due_values("2026-12-31", reason="  ")))
     assert result == {"response_action": "errors", "errors": {"reason": "변경 사유를 입력하세요"}}
+
+
+def test_resources_modal_contains_export_button():
+    _, slack, _, service = _setup()
+    service.handle(_group_action("resources"))
+    first = slack.views[0]["view"]["blocks"][0]
+    assert first["block_id"] == "resources_export"
+    assert json.loads(first["elements"][0]["value"]) == {"group_id": GID, "channel": "C0SHADOW"}
+
+
+def test_export_click_from_modal_publishes_export_intent():
+    from aha.domain.models import Intent, IntentKind
+
+    _, slack, pub, service = _setup()
+    payload = {
+        "type": "block_actions",
+        "user": {"id": "U9"},
+        "trigger_id": "T1",
+        "view": {"id": "V1"},
+        "actions": [
+            {
+                "action_id": "export_resources",
+                "block_id": "resources_export",
+                "value": json.dumps({"group_id": GID, "channel": "C0SHADOW"}),
+            }
+        ],
+    }
+    assert service.handle(payload) is None
+    assert pub.intents == [Intent(IntentKind.EXPORT, GID, None, {"channel": "C0SHADOW", "requester": "U9"})]
+    assert slack.views == []

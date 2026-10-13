@@ -50,3 +50,16 @@ def test_identical_intents_published_separately_are_both_received():
             bodies.append(m["Body"])
             sqs.delete_message(QueueUrl=url, ReceiptHandle=m["ReceiptHandle"])
     assert len(bodies) == 2
+
+
+@mock_aws
+def test_export_intents_use_separate_message_group():
+    sqs = boto3.client("sqs", region_name="ap-northeast-2")
+    url = sqs.create_queue(QueueName="t.fifo", Attributes={"FifoQueue": "true"})["QueueUrl"]
+    intents = [Intent(IntentKind.EXPORT, "g1", None, {"channel": "C1", "requester": "U1"}), Intent(IntentKind.REFRESH, "g1")]
+    SqsIntentPublisher(sqs, url).publish(intents)
+    msgs = sqs.receive_message(QueueUrl=url, MaxNumberOfMessages=10, AttributeNames=["MessageGroupId"])["Messages"]
+    by_kind = {Intent.from_json(m["Body"]).kind: m for m in msgs}
+    assert by_kind[IntentKind.EXPORT]["Attributes"]["MessageGroupId"] == "g1#export"
+    assert Intent.from_json(by_kind[IntentKind.EXPORT]["Body"]).group_id == "g1"
+    assert by_kind[IntentKind.REFRESH]["Attributes"]["MessageGroupId"] == "g1"

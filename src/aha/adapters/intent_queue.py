@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Iterable
 
-from aha.domain.models import Intent
+from aha.domain.models import Intent, IntentKind
 
 SQS_BATCH_LIMIT = 10
 
@@ -23,8 +23,8 @@ class SqsIntentPublisher:
                     {
                         "Id": str(n),
                         "MessageBody": body,
-                        # 그룹 단위 직렬 처리로 Notice 중복 게시를 막는다.
-                        "MessageGroupId": intent.group_id,
+                        # 그룹 단위 직렬 처리로 Notice 중복 게시를 막는다. EXPORT는 별도 그룹으로 분리해 실패가 Notice 전달을 막지 않게 한다.
+                        "MessageGroupId": f"{intent.group_id}#export" if intent.kind is IntentKind.EXPORT else intent.group_id,
                         # 동일 내용의 정당한 반복 intent가 5분 dedup 창에서 버려지지 않도록 매번 고유 ID.
                         "MessageDeduplicationId": uuid.uuid4().hex,
                     }

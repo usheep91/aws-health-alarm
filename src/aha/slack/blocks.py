@@ -187,6 +187,8 @@ def render_thread(intent: Intent, names: dict[str, str | None]) -> str | None:
             return f"⬆️ {label}: ACTION_REQUIRED로 상향되어 Due Date 추적을 시작합니다"
         case IntentKind.ACTION:
             return _action_text(d, names)
+        case IntentKind.EXPORT:
+            return None
         case _:
             return None
 
