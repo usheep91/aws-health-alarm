@@ -1,6 +1,6 @@
 timezone: Asia/Seoul
-default_channel: C0000000000
-shadow_channel: C0000000000
+default_channel: C0C8D9QT7T8
+shadow_channel: C0C8D9QT7T8
 sla_days:
   issue: 3
   SECURITY: 7

@@ -6,3 +6,4 @@ build/
 .terraform/
 *.tfstate
 *.tfstate.*
+tfplan

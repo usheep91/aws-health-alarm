@@ -34,6 +34,7 @@ data "aws_iam_policy_document" "reconcile" {
     actions = [
       "health:DescribeEventsForOrganization",
       "health:DescribeEventDetailsForOrganization",
+      "organizations:ListAccounts",
       "health:DescribeAffectedAccountsForOrganization",
       "health:DescribeAffectedEntitiesForOrganization",
     ]
