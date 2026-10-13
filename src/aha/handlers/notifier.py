@@ -12,7 +12,8 @@ from aha.handlers import deps
 from aha.notifier import Notifier
 
 logger = Logger()
-processor = SqsFifoPartialProcessor()
+# 실패한 메시지 그룹만 재시도로 돌리고, 다른 그룹(다른 이벤트·내보내기)은 계속 처리한다.
+processor = SqsFifoPartialProcessor(skip_group_on_error=True)
 
 
 def record_handler(record: SQSRecord) -> None:
