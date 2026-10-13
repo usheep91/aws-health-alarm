@@ -1,0 +1,10 @@
+timezone: Asia/Seoul
+default_channel: C0000000000
+shadow_channel: C0000000000
+sla_days:
+  issue: 3
+  SECURITY: 7
+  default: 30
+force_track_event_types: []
+suppress_event_types: []
+health_dashboard_url: https://health.aws.amazon.com/health/home

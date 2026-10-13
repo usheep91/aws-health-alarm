@@ -1,0 +1,21 @@
+display_information:
+  name: AWS Health Action Tracker
+  description: AWS Health Action Required 이벤트 추적
+features:
+  bot_user:
+    display_name: aws-health
+    always_online: true
+oauth_config:
+  scopes:
+    bot:
+      - chat:write
+      - chat:write.public
+      - users:read
+settings:
+  interactivity:
+    is_enabled: true
+    # terraform output interaction_url 값으로 설정한다.
+    request_url: https://example.invalid/slack/interactions
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false

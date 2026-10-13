@@ -11,7 +11,7 @@
 **Spec:** `docs/specs/2026-10-12-health-action-required-slack-design.md`
 
 **P1 범위 밖 (후속 Plan):**
-- P2: Organizations 계정 태그 라우팅(`OrgTagRouter`), persona 멘션, 마일스톤 리마인더·에스컬레이션, TRIAGE D-14 자동 승격, 주간 다이제스트, 계정 해지/정지 시 자동 NOT_APPLICABLE
+- P2: Organizations 계정 태그 라우팅(`OrgTagRouter`), persona 멘션, 마일스톤 리마인더·에스컬레이션, TRIAGE D-14 자동 승격, 주간 다이제스트, 계정 해지/정지 시 자동 NOT_APPLICABLE, PROGRESS 스레드 sweep 단위 묶음(spec 9.3), `UnnotifiedTier1Items` 알람(spec 10), 사용자 피드백(ephemeral) 응답, 기존 Notice 채널 오류 다이제스트 노출, SQS KMS(CMK) 암호화 및 API 액세스 로그, `EVTSWEPT#` 마커 TTL, 단일 대형 이벤트의 계정 루프 분할(섀도 운영에서 관측 시)
 - P3: 리전별 EventBridge forwarder, Ingest Lambda, `aha-dedup` 테이블
 
 ## Global Constraints

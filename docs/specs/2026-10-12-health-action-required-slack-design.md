@@ -171,7 +171,7 @@ AWS가 `startTime`을 변경하면 `dueDateSource = AWS`인 경우에만 자동�
 | 모드 | 주기 | 조회 범위 | 목적 |
 |---|---|---|---|
 | event sweep | 1시간 | `DescribeEventsForOrganization` (`lastUpdatedTime` ≥ 직전 성공 시각 − 2시간 겹침) | 신규·변경 이벤트 보정 |
-| entity sweep | 6시간 | 모든 비종결 Tracking Item에 대해 `DescribeAffectedEntitiesForOrganization` | PENDING→RESOLVED 전환 반영 (엔티티 변경은 이벤트 `lastUpdatedTime`에 반영되지 않을 수 있음) |
+| entity sweep | 6시간 | 비종결 Tracking Item 전체 + RESOLVED_AUTO(해결 후 30일, 재발 감시) + RESOLVED_MANUAL(불일치 검증 창 72h+12h, 미플래그 항목)에 대해 `DescribeAffectedEntitiesForOrganization` | PENDING→RESOLVED 전환 반영 (엔티티 변경은 이벤트 `lastUpdatedTime`에 반영되지 않을 수 있음) |
 | full resync | 주 1회 | `eventStatusCodes = open, upcoming` 전체 | 누락 검증 (KPI G1). 새로 생성된 항목 수를 `ReconcileMissedItems` 메트릭으로 발행 |
 
 이벤트별 보조 호출:
