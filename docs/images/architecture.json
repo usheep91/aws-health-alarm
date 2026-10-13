@@ -1,0 +1,258 @@
+{
+  "title": "AWS Health Action Required Tracker (P1)",
+  "subtitle": "Health Organizational view → Slack",
+  "theme": "light",
+  "size": "complex",
+  "nodes": [
+    {
+      "id": "health",
+      "service": "health-dashboard",
+      "label": "AWS Health",
+      "sublabel": "Organizational view",
+      "x": 0,
+      "y": 1,
+      "container": "external-aws"
+    },
+    {
+      "id": "orgs",
+      "service": "organizations",
+      "label": "AWS Organizations",
+      "sublabel": "ListAccounts 권한",
+      "x": 0,
+      "y": 2,
+      "container": "external-aws"
+    },
+    {
+      "id": "scheduler",
+      "service": "eventbridge",
+      "label": "EventBridge\nScheduler",
+      "sublabel": "1h / 6h / 주1회",
+      "x": 3,
+      "y": 0,
+      "container": "account"
+    },
+    {
+      "id": "reconcile",
+      "service": "lambda",
+      "label": "AWS Lambda",
+      "sublabel": "reconcile",
+      "x": 4,
+      "y": 1,
+      "container": "account"
+    },
+    {
+      "id": "sqs",
+      "service": "sqs",
+      "label": "Amazon SQS FIFO",
+      "sublabel": "notify (+DLQ)",
+      "x": 6,
+      "y": 1,
+      "container": "account"
+    },
+    {
+      "id": "notifier",
+      "service": "lambda",
+      "label": "AWS Lambda",
+      "sublabel": "notifier",
+      "x": 7,
+      "y": 1,
+      "container": "account"
+    },
+    {
+      "id": "ddb",
+      "service": "dynamodb",
+      "label": "Amazon DynamoDB",
+      "sublabel": "aha-dev-state",
+      "x": 5,
+      "y": 3,
+      "container": "account"
+    },
+    {
+      "id": "interaction",
+      "service": "lambda",
+      "label": "AWS Lambda",
+      "sublabel": "interaction → Intent",
+      "x": 6,
+      "y": 3,
+      "container": "account"
+    },
+    {
+      "id": "apigw",
+      "service": "api-gateway",
+      "label": "Amazon API Gateway",
+      "sublabel": "POST /slack/interactions",
+      "x": 7,
+      "y": 3,
+      "container": "account"
+    },
+    {
+      "id": "ssm",
+      "service": "systems-manager",
+      "label": "SSM Parameter\nStore",
+      "sublabel": "config",
+      "x": 4,
+      "y": 4,
+      "container": "support"
+    },
+    {
+      "id": "secrets",
+      "service": "secrets-manager",
+      "label": "AWS Secrets\nManager",
+      "sublabel": "Slack token",
+      "x": 5,
+      "y": 4,
+      "container": "support"
+    },
+    {
+      "id": "cw",
+      "service": "cloudwatch",
+      "label": "Amazon CloudWatch",
+      "sublabel": "Alarms",
+      "x": 6,
+      "y": 4,
+      "container": "support"
+    },
+    {
+      "id": "sns",
+      "service": "sns",
+      "label": "Amazon SNS",
+      "sublabel": "alarms",
+      "x": 7,
+      "y": 4,
+      "container": "support"
+    },
+    {
+      "id": "slack",
+      "service": "internet",
+      "label": "Slack",
+      "sublabel": "Shadow / team channels",
+      "x": 9,
+      "y": 2
+    },
+    {
+      "id": "email",
+      "service": "users",
+      "label": "운영 담당자",
+      "sublabel": "Email",
+      "x": 9,
+      "y": 4
+    }
+  ],
+  "connections": [
+    {
+      "source": "scheduler",
+      "target": "reconcile",
+      "label": "event / entity / full",
+      "source_port": "right",
+      "target_port": "top"
+    },
+    {
+      "source": "reconcile",
+      "target": "health",
+      "label": "Describe*ForOrganization",
+      "source_port": "left",
+      "target_port": "right"
+    },
+    {
+      "source": "reconcile",
+      "target": "sqs",
+      "label": "Intent",
+      "source_port": "right",
+      "target_port": "left"
+    },
+    {
+      "source": "reconcile",
+      "target": "ddb",
+      "label": "상태 저장",
+      "source_port": "bottom",
+      "target_port": "left"
+    },
+    {
+      "source": "sqs",
+      "target": "notifier",
+      "source_port": "right",
+      "target_port": "left"
+    },
+    {
+      "source": "notifier",
+      "target": "slack",
+      "label": "게시 · 수정 · CSV DM",
+      "source_port": "right",
+      "target_port": "top"
+    },
+    {
+      "source": "slack",
+      "target": "apigw",
+      "label": "버튼 · 모달",
+      "source_port": "left",
+      "target_port": "top"
+    },
+    {
+      "source": "apigw",
+      "target": "interaction",
+      "source_port": "left",
+      "target_port": "right"
+    },
+    {
+      "source": "interaction",
+      "target": "ddb",
+      "label": "상태 갱신",
+      "style": "dashed",
+      "source_port": "left",
+      "target_port": "right"
+    },
+    {
+      "source": "cw",
+      "target": "sns",
+      "style": "dashed",
+      "source_port": "right",
+      "target_port": "left"
+    },
+    {
+      "source": "sns",
+      "target": "email",
+      "label": "Email",
+      "style": "dashed",
+      "source_port": "right",
+      "target_port": "left"
+    }
+  ],
+  "containers": [
+    {
+      "id": "external-aws",
+      "type": "generic",
+      "label": "AWS Health · Organizations (us-east-1 / global)",
+      "children": [
+        "health",
+        "orgs"
+      ]
+    },
+    {
+      "id": "account",
+      "type": "aws-cloud",
+      "label": "Health 위임 관리자 계정 · ap-northeast-2",
+      "children": [
+        "scheduler",
+        "reconcile",
+        "sqs",
+        "notifier",
+        "ddb",
+        "interaction",
+        "apigw",
+        "support"
+      ]
+    },
+    {
+      "id": "support",
+      "type": "generic",
+      "label": "설정 · 시크릿 · 모니터링",
+      "parent": "account",
+      "children": [
+        "ssm",
+        "secrets",
+        "cw",
+        "sns"
+      ]
+    }
+  ]
+}

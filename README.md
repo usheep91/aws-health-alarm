@@ -5,6 +5,23 @@ AWS Health Organizational view에서 조치가 필요한 이벤트(ACTION_REQUIR
 - 설계: `docs/specs/2026-10-12-health-action-required-slack-design.md`
 - P1 구현 계획: `docs/plans/2026-10-12-health-ar-slack-p1-mvp.md`
 
+## 아키텍처
+
+![Architecture](docs/images/architecture.png)
+
+| 구성 요소 | 역할 |
+|---|---|
+| EventBridge Scheduler | reconcile Lambda를 주기 실행: event sweep 1시간, entity sweep 6시간, full resync 주 1회 (Asia/Seoul) |
+| Lambda `reconcile` | AWS Health Organizational view API(us-east-1, 읽기 전용)로 이벤트·영향 계정·리소스를 조회해 상태를 반영하고, 변경을 Intent로 발행 |
+| DynamoDB `state` | 이벤트, 이벤트 그룹, 계정별 추적 항목, 리소스, 감사 로그, Slack Notice, 커서 (단일 테이블) |
+| SQS FIFO `notify` (+DLQ) | Intent 큐. 이벤트 그룹 단위 순서 보장, CSV 내보내기는 별도 그룹 |
+| Lambda `notifier` | 이벤트 그룹 × 채널당 Slack 메시지 1개 게시·수정, 스레드 기록, CSV를 요청자 DM으로 전송 |
+| API Gateway + Lambda `interaction` | Slack 버튼·모달 처리(서명 검증) → 상태 갱신 → Intent 발행 |
+| SSM Parameter Store / Secrets Manager | 애플리케이션 설정 / Slack bot token·signing secret |
+| CloudWatch Alarms → SNS | heartbeat, 누락, 미완료 실행, DLQ, Lambda 오류를 이메일로 통지 (Slack 장애와 무관한 경로) |
+
+다이어그램 원본은 `docs/images/architecture.json`(AWS 공식 아키텍처 아이콘 기반)이며, 수정 후 SVG/PNG를 다시 생성한다.
+
 ## 개발
 
 ```bash
