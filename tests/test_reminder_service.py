@@ -243,3 +243,20 @@ def test_reminder_uses_local_date():
     service, _, publisher, _ = _service(make_item(assignee="U1", due_date=due, reminders_sent={BASELINE, "D-90", "D-60"}))
     service.run(NOW + timedelta(hours=15))
     assert [i.data["label"] for i in publisher.intents] == ["D-30"]
+
+
+class FailingPublisher(RecordingPublisher):
+    def publish(self, intents):
+        if list(intents):
+            raise RuntimeError("sqs down")
+
+
+def test_publish_failure_leaves_reminders_unrecorded():
+    sent = {BASELINE, "D-90", "D-60"}
+    repo = InMemoryRepository()
+    repo.create_tracking(make_item(assignee="U1", due_date=TODAY + timedelta(days=30), reminders_sent=sent))
+    service = ReminderService(repo, FailingPublisher(), FakeSlack(), FakeOrg(), CFG)
+    with pytest.raises(RuntimeError):
+        service.run(NOW)
+    # 기록하지 않았으므로 다음 실행에서 같은 리마인더를 다시 보낸다(유실보다 중복을 택한다).
+    assert repo.get_tracking(f"g1#{ACCOUNT}").reminders_sent == sent

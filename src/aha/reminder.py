@@ -11,7 +11,7 @@ from aha.config import Config
 from aha.domain.actions import auto_assign
 from aha.domain.due_date import to_local_date
 from aha.domain.models import Intent, IntentKind, State, TrackingItem
-from aha.domain.reminders import decide_reminder
+from aha.domain.reminders import ReminderDecision, decide_reminder
 from aha.domain.repository import ConcurrentModification, Repository
 
 logger = logging.getLogger(__name__)
@@ -40,14 +40,18 @@ class ReminderService:
         today = to_local_date(now, self._cfg.timezone)
         result.auto_assigned = self._auto_assign(now)
 
-        labeled: list[tuple[TrackingItem, str, bool]] = []
+        pending: list[tuple[TrackingItem, ReminderDecision]] = []
         for item in self._repo.list_by_state(State.OPEN):
             result.evaluated += 1
-            saved = self._record_reminder(item, today)
-            if saved is not None:
-                labeled.append(saved)
+            decision = decide_reminder(item, today, self._cfg)
+            if decision.sent != item.reminders_sent:
+                pending.append((item, decision))
+        labeled = [(item, d.label, d.mention) for item, d in pending if d.label]
         result.reminded = len(labeled)
+        # 게시가 실패하면 기록하지 않아 다음 실행이 다시 보낸다. 기록이 실패하면 다음 날 중복될 수 있다(유실보다 낫다).
         self._publisher.publish(_reminder_intents(labeled))
+        for item, decision in pending:
+            self._record(item, decision, today)
         return result
 
     # --- 담당자 자동 지정 ---
@@ -92,25 +96,25 @@ class ReminderService:
 
     # --- 리마인더 ---
 
-    def _record_reminder(self, item: TrackingItem, today: date) -> tuple[TrackingItem, str, bool] | None:
-        """판정 결과를 저장하고, 보낼 리마인더가 있으면 (항목, 라벨, 멘션 여부)를 돌려준다."""
-        current: TrackingItem | None = item
+    def _record(self, item: TrackingItem, decision: ReminderDecision, today: date) -> None:
+        current = item
         for _ in range(MAX_ATTEMPTS):
-            decision = decide_reminder(current, today, self._cfg)
-            if decision.sent == current.reminders_sent:
-                return None
             current.reminders_sent = set(decision.sent)
             try:
                 self._repo.save_tracking(current)
+                return
             except ConcurrentModification:
-                current = self._repo.get_tracking(item.tracking_id)
-                if current is None:
-                    return None
-                continue
-            return (current, decision.label, decision.mention) if decision.label else None
+                fresh = self._repo.get_tracking(item.tracking_id)
+                if fresh is None:
+                    return
+                retry = decide_reminder(fresh, today, self._cfg)
+                if retry.sent == fresh.reminders_sent:
+                    return
+                if retry.label not in (None, decision.label):
+                    # 이미 게시한 것과 다른 리마인더가 필요해졌다. 기록하지 않고 다음 실행에 맡긴다.
+                    return
+                current, decision = fresh, retry
         logger.warning("reminder state save conflicted; will retry next run", extra={"tracking_id": item.tracking_id})
-        return None
-
 
 def _reminder_intents(labeled: list[tuple[TrackingItem, str, bool]]) -> list[Intent]:
     grouped: dict[tuple[str, str], list[tuple[TrackingItem, bool]]] = {}
