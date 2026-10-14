@@ -99,7 +99,7 @@ class Notifier:
             return
         try:
             self._slack.update(notice.posted_channel_id, notice.ts, text, blocks)
-            thread = render_thread(intent, names)
+            thread = render_thread(_scoped(intent, items), names)
             if thread:
                 self._slack.post(notice.posted_channel_id, thread, thread_ts=notice.ts)
         except SlackChannelError:
@@ -114,3 +114,23 @@ class Notifier:
                 raise
             logger.warning("routing channel unavailable, using default", extra={"channel": channel})
             return fallback, self._slack.post(fallback, f"[라우팅 오류: <#{channel}> 게시 실패] {text}", blocks=blocks)
+
+
+# 계정별 값을 담은 필드. 채널 스레드에는 그 채널의 계정 값만 남긴다.
+PER_ACCOUNT_FIELDS = ("assignments", "due_by_account", "assignee_by_account")
+
+
+def _scoped(intent: Intent, items: list[TrackingItem]) -> Intent:
+    """채널 지정 없이 여러 계정을 담은 Intent(리마인더, 자동 지정)를 이 채널의 계정으로 좁힌다.
+
+    다른 채널(팀)의 계정 ID나 담당자 멘션이 스레드에 노출되지 않게 한다.
+    """
+    d = intent.data
+    if intent.tracking_id or d.get("channel") or not d.get("accounts"):
+        return intent
+    present = {i.account_id for i in items}
+    data = {**d, "accounts": [a for a in d["accounts"] if a in present]}
+    for key in PER_ACCOUNT_FIELDS:
+        if key in d:
+            data[key] = {a: v for a, v in d[key].items() if a in present}
+    return Intent(intent.kind, intent.group_id, intent.tracking_id, data)

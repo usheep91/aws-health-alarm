@@ -178,20 +178,72 @@ def _two_channels():
     return repo, slack, notifier
 
 
+def _thread_posts(slack):
+    return {p["channel"]: p["text"] for p in slack.posts if p["thread_ts"] is not None}
+
+
 def test_reminder_touches_only_channels_with_its_accounts():
     _, slack, notifier = _two_channels()
     reminder = Intent(
         IntentKind.REMINDER,
         GID,
         None,
-        {"label": "D-30", "accounts": [ACCOUNT], "due": "2026-11-30", "mention": False, "assignees": []},
+        {
+            "label": "D-30",
+            "accounts": [ACCOUNT],
+            "due_by_account": {ACCOUNT: "2026-11-30"},
+            "mention": False,
+            "assignee_by_account": {ACCOUNT: None},
+        },
     )
     notifier.handle(reminder, TODAY)
     assert [u["channel"] for u in slack.updates] == ["C1"]
     thread = slack.posts[-1]
-    assert thread["channel"] == "C1"
     assert thread["thread_ts"] == next(p["ts"] for p in slack.posts if p["channel"] == "C1" and p["thread_ts"] is None)
-    assert thread["text"] == f"⏰ D-30 · 미조치 계정 1개: {ACCOUNT} (기한 2026-11-30)"
+    assert _thread_posts(slack) == {"C1": f"⏰ D-30 · 미조치 계정 1개: {ACCOUNT} (기한 2026-11-30)"}
+
+
+def test_reminder_thread_lists_only_that_channels_accounts_and_assignees():
+    _, slack, notifier = _two_channels()
+    reminder = Intent(
+        IntentKind.REMINDER,
+        GID,
+        None,
+        {
+            "label": "D-14",
+            "accounts": [ACCOUNT, OTHER_ACCOUNT],
+            "due_by_account": {ACCOUNT: "2026-11-30", OTHER_ACCOUNT: "2026-11-20"},
+            "mention": True,
+            "assignee_by_account": {ACCOUNT: "UA", OTHER_ACCOUNT: None},
+        },
+    )
+    notifier.handle(reminder, TODAY)
+    assert sorted(u["channel"] for u in slack.updates) == ["C1", "C2"]
+    assert _thread_posts(slack) == {
+        "C1": f"⏰ D-14 · 미조치 계정 1개: {ACCOUNT} (기한 2026-11-30) <@UA>",
+        "C2": f"⏰ D-14 · 미조치 계정 1개: {OTHER_ACCOUNT} (기한 2026-11-20) ⚠️ 담당자 미지정",
+    }
+
+
+def test_auto_assign_thread_lists_only_that_channels_accounts():
+    _, slack, notifier = _two_channels()
+    action = Intent(
+        IntentKind.ACTION,
+        GID,
+        None,
+        {
+            "action": "AUTO_ASSIGN",
+            "actor": "system",
+            "assignments": {ACCOUNT: "UA", OTHER_ACCOUNT: "UB"},
+            "accounts": [ACCOUNT, OTHER_ACCOUNT],
+            "channel": None,
+        },
+    )
+    notifier.handle(action, TODAY)
+    assert _thread_posts(slack) == {
+        "C1": f"계정 이메일 기준으로 담당자를 자동 지정했습니다: {ACCOUNT} → <@UA>",
+        "C2": f"계정 이메일 기준으로 담당자를 자동 지정했습니다: {OTHER_ACCOUNT} → <@UB>",
+    }
 
 
 def test_auto_assign_action_touches_only_channels_with_its_accounts():
@@ -204,5 +256,4 @@ def test_auto_assign_action_touches_only_channels_with_its_accounts():
     )
     notifier.handle(action, TODAY)
     assert [u["channel"] for u in slack.updates] == ["C2"]
-    assert slack.posts[-1]["channel"] == "C2"
-    assert slack.posts[-1]["text"] == f"계정 이메일 기준으로 담당자를 자동 지정했습니다: {OTHER_ACCOUNT} → <@U9>"
+    assert _thread_posts(slack) == {"C2": f"계정 이메일 기준으로 담당자를 자동 지정했습니다: {OTHER_ACCOUNT} → <@U9>"}

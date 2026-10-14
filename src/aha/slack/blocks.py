@@ -214,12 +214,15 @@ def render_thread(intent: Intent, names: dict[str, str | None]) -> str | None:
 
 
 def _reminder_text(d: dict, names: dict[str, str | None]) -> str:
-    accounts = ", ".join(account_label(a, names) for a in d["accounts"])
+    listed = d["accounts"]
+    accounts = ", ".join(account_label(a, names) for a in listed)
+    due = min(d["due_by_account"][a] for a in listed)  # ISO 날짜 문자열은 사전순 = 날짜순
     label = d["label"]
     head = f"🚨 기한 경과 {label}" if label.startswith("D+") else f"⏰ {label}"
-    text = f"{head} · 미조치 계정 {len(d['accounts'])}개: {accounts} (기한 {d['due']})"
+    text = f"{head} · 미조치 계정 {len(listed)}개: {accounts} (기한 {due})"
     if d.get("mention"):
-        assignees = d.get("assignees") or []
+        owners = d.get("assignee_by_account") or {}
+        assignees = sorted({owners[a] for a in listed if owners.get(a)})
         text += (" " + " ".join(f"<@{u}>" for u in assignees)) if assignees else " ⚠️ 담당자 미지정"
     return text
 

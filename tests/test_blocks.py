@@ -202,7 +202,14 @@ def test_auto_assign_action_text():
 
 
 def _reminder(label, mention=False, assignees=(), accounts=(ACCOUNT,)):
-    data = {"label": label, "accounts": list(accounts), "due": "2026-11-30", "mention": mention, "assignees": list(assignees)}
+    owners = list(assignees) + [None] * (len(accounts) - len(assignees))
+    data = {
+        "label": label,
+        "accounts": list(accounts),
+        "due_by_account": {a: "2026-11-30" for a in accounts},
+        "mention": mention,
+        "assignee_by_account": dict(zip(accounts, owners)),
+    }
     return Intent(IntentKind.REMINDER, "g1", None, data)
 
 
@@ -212,8 +219,19 @@ def test_reminder_text_without_mention():
 
 
 def test_reminder_text_mentions_assignees():
-    text = render_thread(_reminder("D-day", mention=True, assignees=("U1", "U2")), {})
-    assert text == f"⏰ D-day · 미조치 계정 1개: {ACCOUNT} (기한 2026-11-30) <@U1> <@U2>"
+    text = render_thread(_reminder("D-day", mention=True, assignees=("U2", "U1"), accounts=(ACCOUNT, "444455556666")), {})
+    assert text == f"⏰ D-day · 미조치 계정 2개: {ACCOUNT}, 444455556666 (기한 2026-11-30) <@U1> <@U2>"
+
+
+def test_reminder_due_is_earliest_listed_account():
+    intent = _reminder("D-7", accounts=(ACCOUNT, "444455556666"))
+    intent.data["due_by_account"]["444455556666"] = "2026-11-28"
+    assert render_thread(intent, {}).endswith("(기한 2026-11-28)")
+
+
+def test_reminder_with_some_assignees_does_not_flag_missing():
+    text = render_thread(_reminder("D-7", mention=True, assignees=("U1",), accounts=(ACCOUNT, "444455556666")), {})
+    assert text.endswith("<@U1>")
 
 
 def test_reminder_text_flags_missing_assignee():

@@ -127,9 +127,9 @@ def _reminder_intents(labeled: list[tuple[TrackingItem, str, bool]]) -> list[Int
                 {
                     "label": label,
                     "accounts": sorted(i.account_id for i in items),
-                    "due": min(i.due_date for i in items).isoformat(),
+                    "due_by_account": {i.account_id: i.due_date.isoformat() for i in items},
                     "mention": any(m for _, m in entries),
-                    "assignees": sorted({i.assignee for i in items if i.assignee}),
+                    "assignee_by_account": {i.account_id: i.assignee for i in items},
                 },
             )
         )

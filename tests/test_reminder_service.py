@@ -85,9 +85,9 @@ def test_next_day_milestone_emits_one_reminder_per_group():
     assert reminders[0].data == {
         "label": "D-30",
         "accounts": [ACCOUNT],
-        "due": (TODAY + timedelta(days=31)).isoformat(),
+        "due_by_account": {ACCOUNT: (TODAY + timedelta(days=31)).isoformat()},
         "mention": False,
-        "assignees": ["UUSHEEP"],
+        "assignee_by_account": {ACCOUNT: "UUSHEEP"},
     }
 
 
@@ -104,9 +104,9 @@ def test_group_reminder_combines_accounts_with_same_label():
     assert publisher.intents[0].data == {
         "label": "D-14",
         "accounts": [ACCOUNT, OTHER_ACCOUNT],
-        "due": due.isoformat(),
+        "due_by_account": {ACCOUNT: due.isoformat(), OTHER_ACCOUNT: due.isoformat()},
         "mention": True,
-        "assignees": ["UMANUAL", "UUSHEEP"],
+        "assignee_by_account": {ACCOUNT: "UUSHEEP", OTHER_ACCOUNT: "UMANUAL"},
     }
 
 
