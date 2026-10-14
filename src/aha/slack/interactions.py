@@ -10,7 +10,7 @@ from aha.domain.due_date import to_local_date
 from aha.domain.models import Intent, IntentKind, State, TrackingItem, split_tracking_id
 from aha.domain.repository import Repository
 from aha.routing import Router, items_for_channel
-from aha.slack.views import due_date_view, na_view, resources_view
+from aha.slack.views import description_view, due_date_view, na_view, resources_view
 
 MENU_ACTIONS = {"resolve": ActionKind.RESOLVE_MANUAL, "triage": ActionKind.TRIAGE_REQUIRED}
 
@@ -70,6 +70,12 @@ class InteractionService:
         channel = self._logical_channel(group_id, payload["channel"]["id"], _message_ts(payload))
         if action_id == "resources":
             self._slack.open_view(trigger, self._resources(group_id, channel))
+            return
+        if action_id == "description":  # 읽기 전용: 상태 변경/intent 없음
+            group = self._repo.get_group(group_id)
+            event = self._repo.get_event(group.primary_arn) if group else None
+            if event is not None:
+                self._slack.open_view(trigger, description_view(event))
             return
         items = self._channel_items(group_id, channel, active_only=True)
         if not items:

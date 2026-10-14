@@ -146,3 +146,44 @@ def test_new_intent_has_no_thread_text():
 
 def test_render_thread_export_is_none():
     assert render_thread(Intent(IntentKind.EXPORT, "g1", None, {"channel": "C1", "requester": "U1"}), {}) is None
+
+
+LONG = "가" * 301
+
+
+def _desc_buttons(blocks):
+    return [e for b in _blocks_of(blocks, "actions") for e in b["elements"] if e["action_id"] == "description"]
+
+
+def test_long_description_adds_button_as_last_element_active():
+    _, blocks = render_notice(_event(description=LONG), [make_item()], {}, CFG, TODAY)
+    elements = _blocks_of(blocks, "actions")[0]["elements"]
+    assert elements[-1] == {"type": "button", "action_id": "description", "text": {"type": "plain_text", "text": "전체 내용 보기", "emoji": True}}
+
+
+def test_long_description_adds_button_as_last_element_triage():
+    _, blocks = render_notice(_event(description=LONG), [make_item(state=State.TRIAGE)], {}, CFG, TODAY)
+    assert [e["action_id"] for e in _blocks_of(blocks, "actions")[0]["elements"]][-1] == "description"
+
+
+def test_long_description_adds_actions_block_to_completed_notice():
+    _, blocks = render_notice(_event(description=LONG), [make_item(state=State.RESOLVED_AUTO)], {}, CFG, TODAY)
+    actions = _blocks_of(blocks, "actions")
+    assert len(actions) == 1
+    assert actions[0]["block_id"] == "grp:g1"
+    assert [e["action_id"] for e in actions[0]["elements"]] == ["description"]
+    summary_index = next(i for i, b in enumerate(blocks) if b["type"] == "section")
+    assert blocks[summary_index + 1] is actions[0]
+
+
+def test_short_description_has_no_button():
+    for state in (State.OPEN, State.TRIAGE, State.RESOLVED_AUTO):
+        _, blocks = render_notice(_event(description="가" * 300), [make_item(state=state)], {}, CFG, TODAY)
+        assert _desc_buttons(blocks) == []
+
+
+def test_long_description_with_many_accounts_stays_within_block_limit():
+    items = [make_item(account_id=f"{n:012d}", manual_completion_required=True) for n in range(45)]
+    _, blocks = render_notice(_event(description=LONG), items, {}, CFG, TODAY)
+    assert len(blocks) <= 50
+    assert len(_desc_buttons(blocks)) == 1
