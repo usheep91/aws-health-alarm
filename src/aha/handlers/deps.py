@@ -13,6 +13,7 @@ from slack_sdk import WebClient
 
 from aha.adapters.health_client import HealthClient
 from aha.adapters.intent_queue import SqsIntentPublisher
+from aha.adapters.org_client import OrgDirectory
 from aha.adapters.repo_dynamodb import DynamoRepository
 from aha.adapters.slack_client import SlackGateway
 from aha.config import Config, load_config
@@ -39,6 +40,11 @@ def publisher() -> SqsIntentPublisher:
 @cache
 def health() -> HealthClient:
     return HealthClient()
+
+
+@cache
+def org_directory() -> OrgDirectory:
+    return OrgDirectory()
 
 
 @cache
