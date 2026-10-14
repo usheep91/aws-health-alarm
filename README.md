@@ -23,6 +23,54 @@ AWS Health Organizational view에서 조치가 필요한 이벤트(ACTION_REQUIR
 
 다이어그램 원본은 `docs/images/architecture.json`(AWS 공식 아키텍처 아이콘 기반)이며, 수정 후 SVG/PNG를 다시 생성한다.
 
+## 데이터 모델 (DynamoDB `aha-{env}-state`)
+
+여러 항목 유형을 키 접두사로 구분하는 **단일 테이블**이다. 구현: `src/aha/adapters/repo_dynamodb.py`.
+
+- 키: `pk`(PK, String), `sk`(SK, String), 온디맨드 용량
+- GSI `gsi-state`: `gsi1pk = STATE#{state}`, `gsi1sk = {due_date}#{tracking_id}`, 프로젝션 ALL — 상태별·Due Date 순 조회(리마인더, entity sweep)
+- 보호: PITR, 삭제 보호, 서버 측 암호화
+
+| 항목 | pk | sk | 주요 속성 |
+|---|---|---|---|
+| 이벤트 | `EVT#{eventArn}` | `META` | `group_id`, service, event_type_code, category, event_region, status_code, start/end/last_updated_time, actionability, personas, description, description_hash, dynamic_status |
+| 이벤트 그룹 | `GRP#{groupId}` | `META` | correlation_key, primary_arn, event_arns(String Set) |
+| 추적 항목(계정 단위) | `GRP#{groupId}` | `TRK#{accountId}` | 아래 표 참고 |
+| Notice(Slack 메시지) | `GRP#{groupId}` | `NTC#{channelId}` | ts, posted_channel_id(대체 채널 게시 시 실제 채널) |
+| 리소스 | `TRK#{groupId}#{accountId}` | `ENT#{entityValue}` | status(PENDING/RESOLVED/UNKNOWN…), last_seen_at |
+| 감사 로그 | `TRK#{groupId}#{accountId}` | `LOG#{ISO8601}#{rand}` | actor(Slack 사용자 ID 또는 `system`), action, before, after, detail |
+| 커서·마커 | `CURSOR` | `event`, `EVTSWEPT#{eventArn}` | value(ISO8601) |
+
+추적 항목 속성:
+
+| 속성 | 설명 |
+|---|---|
+| `tier` | `TIER1`(ACTION_REQUIRED) / `TIER2`(ACTION_MAY_BE_REQUIRED) |
+| `state` | `TRIAGE` / `OPEN` / `RESOLVED_AUTO` / `RESOLVED_MANUAL` / `NOT_APPLICABLE` / `CLOSED_BY_AWS` |
+| `due_date`, `due_date_source`, `aws_due_date` | 현재 Due Date, 출처(`AWS`/`DEFAULT_SLA`/`MANUAL`), AWS 기준 날짜 |
+| `assignee` | 담당자 Slack 사용자 ID (수동 지정 또는 계정 이메일 alias 기반 자동 지정) |
+| `event_arns` | 연결된 eventArn 목록 (분할 이벤트 포함) |
+| `reminders_sent` | 발송한 리마인더 키 (`BASELINE`, `D-30`, `D-0`, `OVERDUE-1`, `OVERDUE-YYYY-Www`) |
+| `manual_completion_required`, `verification_mismatch` | 자동 완료 판정 미지원 여부, 수동 완료 후 72시간 불일치 플래그 |
+| `counts` | `{pending, resolved, total}` 리소스 집계 |
+| `created_at`, `resolved_at`, `manual_resolved_at` | 생성·종결 시각 |
+| `version` | 낙관적 잠금(조건부 쓰기) 버전 |
+
+식별자 규칙:
+- `groupId = sha256("{eventTypeCode}#{eventRegion}#{변경일(YYYY-MM-DD)}")[:16]` — 같은 유형·리전·변경일의 이벤트(분할된 eventArn 포함)가 한 그룹이 된다. 기존 eventArn은 `EVT#` 항목에 저장된 `group_id`를 따른다.
+- `trackingId = {groupId}#{accountId}`
+
+주요 조회 패턴:
+
+| 용도 | 방법 |
+|---|---|
+| 그룹의 계정별 항목 / Notice | `pk = GRP#{groupId}` + `sk begins_with TRK#` / `NTC#` |
+| 항목의 리소스 / 감사 로그 | `pk = TRK#{trackingId}` + `sk begins_with ENT#` / `LOG#` |
+| 상태별 대상(리마인더, sweep) | GSI `gsi-state`, `gsi1pk = STATE#OPEN` (Due Date 순) |
+| eventArn → 그룹 | `EVT#{eventArn}` 항목의 `group_id` |
+
+날짜·시각은 ISO 문자열, 집합 값은 정렬된 리스트로 저장한다(그룹 `event_arns`만 동시 병합을 위해 String Set).
+
 ## 개발
 
 ```bash
