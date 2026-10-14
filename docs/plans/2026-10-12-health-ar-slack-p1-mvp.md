@@ -11,7 +11,7 @@
 **Spec:** `docs/specs/2026-10-12-health-action-required-slack-design.md`
 
 **P1 범위 밖 (후속 Plan):**
-- P2: Organizations 계정 태그 라우팅(`OrgTagRouter`), persona 멘션, 마일스톤 리마인더·에스컬레이션, TRIAGE D-14 자동 승격, 주간 다이제스트, 계정 해지/정지 시 자동 NOT_APPLICABLE, PROGRESS 스레드 sweep 단위 묶음(spec 9.3), `UnnotifiedTier1Items` 알람(spec 10), 사용자 피드백(ephemeral) 응답, 기존 Notice 채널 오류 다이제스트 노출, SQS KMS(CMK) 암호화 및 API 액세스 로그, `EVTSWEPT#` 마커 TTL, 단일 대형 이벤트의 계정 루프 분할(섀도 운영에서 관측 시)
+- P2: Organizations 계정 태그 라우팅(`OrgTagRouter`), persona 멘션, ~~마일스톤 리마인더~~ (완료), ~~계정 이메일 기준 담당자 자동 지정~~ (완료), 에스컬레이션 채널, TRIAGE 7일 리마인더·D-14 자동 승격, 주간 다이제스트, 계정 해지/정지 시 자동 NOT_APPLICABLE, PROGRESS 스레드 sweep 단위 묶음(spec 9.3), `UnnotifiedTier1Items` 알람(spec 10), 사용자 피드백(ephemeral) 응답, 기존 Notice 채널 오류 다이제스트 노출, SQS KMS(CMK) 암호화 및 API 액세스 로그, `EVTSWEPT#` 마커 TTL, 단일 대형 이벤트의 계정 루프 분할(섀도 운영에서 관측 시)
 - P3: 리전별 EventBridge forwarder, Ingest Lambda, `aha-dedup` 테이블
 
 ## Global Constraints
@@ -5144,5 +5144,5 @@ git commit -m "feat: add Lambda build, Terraform core module, dev env and runboo
 | 11 최소 권한, 서명 검증 fail-closed, 암호화, PITR | 11, 13, 14 |
 | 13 테스트 전략 (unit, moto, 시나리오) | 전 Task |
 | 14 P1 섀도 운영 | 14 (README) |
-| 9.5 리마인더, 9.6 다이제스트, 8.2 태그 라우팅, TRIAGE 자동 승격 | P2 Plan |
+| 9.5 리마인더(마일스톤·Overdue·담당자 자동 지정 구현 완료, 에스컬레이션·TRIAGE 부분 남음), 9.6 다이제스트, 8.2 태그 라우팅, TRIAGE 자동 승격 | P2 Plan |
 | 5.1–5.2 EventBridge 수집, 7.3 dedup | P3 Plan |

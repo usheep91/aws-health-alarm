@@ -368,6 +368,12 @@ Due: 2026-11-30 (D-49)   리전: ap-northeast-2   Persona: OPERATIONS
 - TRIAGE 항목: 생성 후 7일까지 판정이 없으면 스레드 리마인더를 1회 보낸다. Due Date가 D-14 이내로 들어오면 자동으로 OPEN 승격하고 스레드에 알린다.
 - 담당자 미지정 OPEN 항목은 D-14부터 리마인더에 "⚠️ 담당자 미지정"을 강조한다.
 
+> **구현 현황 (P2 일부 구현):** `reminder` Lambda가 매일 09:00 KST에 실행된다.
+> - 구현됨: 마일스톤 리마인더(D-90/60/30/14/7/3/1/D-day, `reminder_milestones`로 조정), D-14 이내(`mention_within_days`) 담당자 멘션 또는 "⚠️ 담당자 미지정" 강조, Overdue는 D+1에 1회 후 **매주 월요일** 1회(위 표의 '매일'과 다름), 같은 그룹·같은 라벨의 계정을 Notice 스레드 1건으로 묶음.
+> - 첫 평가 시 이미 지난 마일스톤은 발송 없이 기록만 한다(기존·늦게 감지된 항목의 알림 폭주 방지). Due Date가 바뀌면 기록을 비우고 다음 실행에서 다시 기준선을 잡는다.
+> - 담당자 자동 지정: 담당자가 없는 OPEN/TRIAGE 항목에 대해 Organizations 계정 이메일의 로컬 파트에서 `+접미사`를 떼고 소문자로 만든 alias로 `alias@{owner_email_domain}`(기본 `amazon.com`)을 Slack `users.lookupByEmail`로 조회해 지정한다. 찾지 못하면 미지정으로 둔다. 수동 지정은 덮어쓰지 않는다.
+> - 남은 P2: `escalation_channel` 게시(D-7, 일일 Overdue 목록), TRIAGE 7일 리마인더, TRIAGE D-14 자동 승격.
+
 ### 9.6 주간 다이제스트 (월 09:00 KST)
 - **팀 채널별**: Overdue, 30일 이내 마감, TRIAGE 대기, 담당자 미지정, `verificationMismatch` 항목 목록 (Due Date 순)
 - **전사(escalation 채널)**: 팀별 OPEN/Overdue 건수, 태그 미설정 계정, 시스템 상태(마지막 reconcile 성공 시각, DLQ 적재 건수)
