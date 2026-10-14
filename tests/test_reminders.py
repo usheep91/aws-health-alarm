@@ -97,7 +97,8 @@ def test_monday_after_d_plus_one_sends_weekly():
     sent = {BASELINE, "OVERDUE-1", "OVERDUE-2026-W49"} | ALL_MILESTONES
     decision = _decide(-7, sent=sent)  # 2026-12-07 월요일, W50
     assert decision.label == "D+7"
-    assert decision.sent == sent | {"OVERDUE-2026-W50"}
+    # 지난 주차 키는 지우고 OVERDUE-1과 이번 주차만 남긴다.
+    assert decision.sent == (sent - {"OVERDUE-2026-W49"}) | {"OVERDUE-2026-W50"}
     assert _decide(-7, sent=decision.sent).label is None
 
 
@@ -133,3 +134,10 @@ def test_custom_milestones_and_mention_window():
     decision = decide_reminder(item, _at(10), cfg)
     assert (decision.label, decision.mention) == ("D-10", False)
     assert decision.sent == {BASELINE, "D-10"}
+
+
+def test_weekly_keys_do_not_accumulate():
+    sent = {BASELINE, "OVERDUE-1", "OVERDUE-2026-W49", "OVERDUE-2026-W50"} | ALL_MILESTONES
+    decision = _decide(sent=sent, today=date(2026, 12, 14))  # W51 월요일
+    assert decision.label == "D+14"
+    assert {k for k in decision.sent if k.startswith("OVERDUE-")} == {"OVERDUE-1", "OVERDUE-2026-W51"}
