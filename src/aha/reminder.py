@@ -65,7 +65,12 @@ class ReminderService:
         assignments: dict[str, str] = {}
         for item in unassigned:
             if item.account_id not in owners:
-                owners[item.account_id] = self._resolve_owner(item.account_id, accounts)
+                try:
+                    owners[item.account_id] = self._resolve_owner(item.account_id, accounts)
+                except SlackRetryable as e:
+                    # 스로틀링이 계속되면 이번 실행의 조회는 멈추고, 찾은 담당자만 지정한 뒤 리마인더로 넘어간다.
+                    logger.warning("slack user lookup rate limited; stopping lookups for this run", extra={"retry_after": e.retry_after})
+                    break
             if owners[item.account_id]:
                 assignments[item.tracking_id] = owners[item.account_id]
         intents = auto_assign(self._repo, assignments, now)

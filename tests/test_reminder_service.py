@@ -175,11 +175,26 @@ def test_lookup_failure_skips_only_that_account():
     assert repo.get_tracking(f"g1#{OTHER_ACCOUNT}").assignee == "UNOBODY"
 
 
-def test_retryable_slack_error_propagates():
-    service, _, _, slack = _service(make_item())
+def test_rate_limited_lookup_stops_lookups_but_still_reminds():
+    third = "777788889999"
+    org = FakeOrg()
+    org._accounts[third] = AccountInfo(third, "stg", "third@amazon.com", "ACTIVE")
+    reached = {BASELINE, "D-90", "D-60"}
+    service, repo, publisher, slack = _service(
+        make_item(group_id="g1", account_id=OTHER_ACCOUNT, due_date=TODAY + timedelta(days=30), reminders_sent=reached),
+        make_item(group_id="g2", account_id=ACCOUNT, due_date=TODAY + timedelta(days=31), reminders_sent=reached),
+        make_item(group_id="g3", account_id=third, due_date=TODAY + timedelta(days=32), reminders_sent=reached),
+        users={"nobody@amazon.com": "UNOBODY", "third@amazon.com": "UTHIRD"},
+        org=org,
+    )
     slack.lookup_errors[USHEEP] = SlackRetryable(3)
-    with pytest.raises(SlackRetryable):
-        service.run(NOW)
+    result = service.run(NOW)
+    # 스로틀링 이후에는 이번 실행에서 더 조회하지 않고, 이미 찾은 담당자는 지정한다.
+    assert slack.lookups == ["nobody@amazon.com", USHEEP]
+    assert result.auto_assigned == 1
+    assert repo.get_tracking(f"g1#{OTHER_ACCOUNT}").assignee == "UNOBODY"
+    assert repo.get_tracking(f"g3#{third}").assignee is None
+    assert [(i.kind, i.group_id) for i in publisher.intents] == [(IntentKind.ACTION, "g1"), (IntentKind.REMINDER, "g1")]
 
 
 def test_organization_failure_skips_auto_assign_but_still_reminds():
