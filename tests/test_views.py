@@ -139,11 +139,13 @@ def test_description_view_without_description():
 def test_description_view_hard_split_keeps_entities_whole():
     from aha.slack.views import SECTION_LIMIT, description_view
 
-    sections = _texts(description_view(_event("&" * 3000)))[1:]
-    assert len(sections) > 1
-    assert all(0 < len(s) <= SECTION_LIMIT for s in sections)
-    assert all(s.startswith("&amp;") and s.endswith("&amp;") for s in sections)
-    assert "".join(sections) == "&amp;" * 3000
+    for prefix in ("a", "ab", "abc", "abcd"):  # 2900이 5의 배수라 접두어로 경계를 어긋나게 한다
+        sections = _texts(description_view(_event(prefix + "&" * 3000)))[1:]
+        assert len(sections) > 1
+        assert all(0 < len(s) <= SECTION_LIMIT for s in sections)
+        assert all(s.endswith(";") for s in sections)
+        assert all(s.startswith("&amp;") for s in sections[1:])
+        assert "".join(sections) == prefix + "&amp;" * 3000
 
 
 def test_description_view_blank_description_is_placeholder():
