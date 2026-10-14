@@ -11,11 +11,12 @@ AWS Health Organizational view에서 조치가 필요한 이벤트(ACTION_REQUIR
 
 | 구성 요소 | 역할 |
 |---|---|
-| EventBridge Scheduler | reconcile Lambda를 주기 실행: event sweep 1시간, entity sweep 6시간, full resync 주 1회 (Asia/Seoul) |
+| EventBridge Scheduler | reconcile Lambda를 주기 실행: event sweep 1시간, entity sweep 6시간, full resync 주 1회 (Asia/Seoul). reminder Lambda는 매일 09:00 KST |
 | Lambda `reconcile` | AWS Health Organizational view API(us-east-1, 읽기 전용)로 이벤트·영향 계정·리소스를 조회해 상태를 반영하고, 변경을 Intent로 발행 |
 | DynamoDB `state` | 이벤트, 이벤트 그룹, 계정별 추적 항목, 리소스, 감사 로그, Slack Notice, 커서 (단일 테이블) |
 | SQS FIFO `notify` (+DLQ) | Intent 큐. 이벤트 그룹 단위 순서 보장, CSV 내보내기는 별도 그룹 |
 | Lambda `notifier` | 이벤트 그룹 × 채널당 Slack 메시지 1개 게시·수정, 스레드 기록, CSV를 요청자 DM으로 전송 |
+| Lambda `reminder` | 매일 09:00 KST: 담당자 미지정 항목에 계정 이메일(Organizations) 기준 담당자 자동 지정, OPEN 항목의 마일스톤(D-90…D-day)·기한 경과(D+1, 이후 매주 월요일) 리마인더를 Intent로 발행 |
 | API Gateway + Lambda `interaction` | Slack 버튼·모달 처리(서명 검증) → 상태 갱신 → Intent 발행 |
 | SSM Parameter Store / Secrets Manager | 애플리케이션 설정 / Slack bot token·signing secret |
 | CloudWatch Alarms → SNS | heartbeat, 누락, 미완료 실행, DLQ, Lambda 오류를 이메일로 통지 (Slack 장애와 무관한 경로) |
@@ -54,10 +55,12 @@ pytest -q
 
 배포 시 참고:
 
-- 최초 배포 후 몇 시간 동안은 reconcile 실행 이력이 쌓이지 않아 heartbeat 알람이 한 번 울릴 수 있다. 첫 sweep이 성공하면 해소된다.
+- 최초 배포 후 몇 시간 동안은 reconcile 실행 이력이 쌓이지 않아 heartbeat 알람이 한 번 울릴 수 있다. 첫 sweep이 성공하면 해소된다. `reminder-heartbeat` 알람도 첫 09:00 KST 실행 전까지 울릴 수 있다.
 - Slack 시크릿을 고객 관리형 KMS 키(CMK)로 암호화했다면 notifier/interaction Lambda 역할에 해당 키의 `kms:Decrypt` 권한을 추가해야 한다.
 - dev DynamoDB 테이블은 삭제 보호(`deletion_protection_enabled`)가 켜져 있다. `terraform destroy` 전에 명시적으로 해제해야 한다.
 - CSV 내보내기를 쓰려면 Slack App에 `files:write`, `im:write` 스코프가 필요하다. 스코프를 추가한 뒤 워크스페이스에 앱을 다시 설치한다. Bot token이 바뀌면 Secrets Manager 시크릿을 `put-secret-value`로 갱신하고, 이미 떠 있는(warm) Lambda는 콜드 스타트 전까지 이전 토큰을 유지하므로 재배포하거나 함수 설정을 업데이트해 갱신한다.
+- 리마인더와 담당자 자동 지정을 쓰려면 Slack App에 `users:read.email` 스코프가 필요하다(`slack/manifest.yaml` 반영됨). 스코프를 추가한 뒤 워크스페이스에 앱을 다시 설치하고, Bot token이 바뀌면 위와 같이 시크릿을 갱신한다.
+- `reminder` Lambda는 매일 09:00 KST에 실행된다. 첫 실행은 기존 항목의 이미 지난 마일스톤을 기록만 하고 리마인더를 보내지 않는다(알림 폭주 없음). 대신 담당자가 없는 항목에는 계정 이메일 alias(`+접미사` 제거, 소문자) + `owner_email_domain`(기본 `amazon.com`)으로 Slack 사용자를 찾아 담당자를 자동 지정하고 스레드에 남긴다. 찾지 못하면 미지정으로 둔다.
 - 프로바이더 버전은 `infra/envs/dev/.terraform.lock.hcl`로 고정되어 있다. 업그레이드는 `init -upgrade` 후 lock 파일 변경을 검토해 커밋한다.
 
 ## 섀도 운영 (P1, 2주)
@@ -77,4 +80,5 @@ pytest -q
 | `*-reconcile-missed-items` | 주간 full resync에서 누락 발견 | event sweep 커서·필터 점검 |
 | `*-reconcile-incomplete-{full,entity}` | full/entity sweep이 Lambda 시간 예산(종료 60초 전) 소진으로 중단됨 | reconcile 로그에서 처리량·Health API 지연 확인. 이벤트/항목 수가 많으면 sweep 분할 또는 주기 조정 검토 |
 | `*-notify-dlq-not-empty` | Slack 게시 5회 실패 | DLQ 메시지 확인 후 원인 해결, SQS 콘솔의 DLQ redrive로 재처리 |
+| `*-reminder-heartbeat` | 일일 리마인더가 이틀 연속 성공하지 않음 | reminder Lambda 로그 확인 (Slack `users:read.email` 스코프, Organizations 권한) |
 | `*-<fn>-errors` | Lambda 오류 | 해당 함수 로그 확인 |

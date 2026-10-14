@@ -205,13 +205,32 @@ def render_thread(intent: Intent, names: dict[str, str | None]) -> str | None:
             return f"⬆️ {label}: ACTION_REQUIRED로 상향되어 Due Date 추적을 시작합니다"
         case IntentKind.ACTION:
             return _action_text(d, names)
+        case IntentKind.REMINDER:
+            return _reminder_text(d, names)
         case IntentKind.EXPORT:
             return None
         case _:
             return None
 
 
+def _reminder_text(d: dict, names: dict[str, str | None]) -> str:
+    listed = d["accounts"]
+    accounts = ", ".join(account_label(a, names) for a in listed)
+    due = min(d["due_by_account"][a] for a in listed)  # ISO 날짜 문자열은 사전순 = 날짜순
+    label = d["label"]
+    head = f"🚨 기한 경과 {label}" if label.startswith("D+") else f"⏰ {label}"
+    text = f"{head} · 미조치 계정 {len(listed)}개: {accounts} (기한 {due})"
+    if d.get("mention"):
+        owners = d.get("assignee_by_account") or {}
+        assignees = sorted({owners[a] for a in listed if owners.get(a)})
+        text += (" " + " ".join(f"<@{u}>" for u in assignees)) if assignees else " ⚠️ 담당자 미지정"
+    return text
+
+
 def _action_text(d: dict, names: dict[str, str | None]) -> str:
+    if d["action"] == "AUTO_ASSIGN":
+        pairs = ", ".join(f"{account_label(a, names)} → <@{d['assignments'][a]}>" for a in d["accounts"])
+        return f"계정 이메일 기준으로 담당자를 자동 지정했습니다: {pairs}"
     accounts = ", ".join(account_label(a, names) for a in d["accounts"])
     actor = f"<@{d['actor']}>"
     match d["action"]:

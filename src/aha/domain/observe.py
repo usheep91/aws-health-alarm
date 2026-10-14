@@ -206,7 +206,11 @@ def _sync_due_date(item: TrackingItem, snap: EventSnapshot, cfg: Config) -> list
         return []
     old = item.due_date
     item.due_date, item.due_date_source, item.aws_due_date = due, source, aws_due
-    return [] if due == old else [_due_intent(item, old, due, source, kept_manual=False)]
+    if due == old:
+        return []
+    # 기한이 바뀌면 다음 리마인더 실행에서 새 기한 기준으로 기준선을 다시 잡는다.
+    item.reminders_sent = set()
+    return [_due_intent(item, old, due, source, kept_manual=False)]
 
 
 def _due_intent(item, old, new, source, kept_manual) -> Intent:

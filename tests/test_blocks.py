@@ -187,3 +187,58 @@ def test_long_description_with_many_accounts_stays_within_block_limit():
     _, blocks = render_notice(_event(description=LONG), items, {}, CFG, TODAY)
     assert len(blocks) <= 50
     assert len(_desc_buttons(blocks)) == 1
+
+
+def test_auto_assign_action_text():
+    intent = Intent(
+        IntentKind.ACTION,
+        "g1",
+        None,
+        {"action": "AUTO_ASSIGN", "actor": "system", "assignments": {ACCOUNT: "U2", "444455556666": "U3"}, "accounts": ["444455556666", ACCOUNT], "channel": None},
+    )
+    text = render_thread(intent, {ACCOUNT: "prod"})
+    assert text == f"계정 이메일 기준으로 담당자를 자동 지정했습니다: 444455556666 → <@U3>, {ACCOUNT} (prod) → <@U2>"
+    assert "<@system>" not in text
+
+
+def _reminder(label, mention=False, assignees=(), accounts=(ACCOUNT,)):
+    owners = list(assignees) + [None] * (len(accounts) - len(assignees))
+    data = {
+        "label": label,
+        "accounts": list(accounts),
+        "due_by_account": {a: "2026-11-30" for a in accounts},
+        "mention": mention,
+        "assignee_by_account": dict(zip(accounts, owners)),
+    }
+    return Intent(IntentKind.REMINDER, "g1", None, data)
+
+
+def test_reminder_text_without_mention():
+    text = render_thread(_reminder("D-30", accounts=(ACCOUNT, "444455556666")), {ACCOUNT: "prod"})
+    assert text == f"⏰ D-30 · 미조치 계정 2개: {ACCOUNT} (prod), 444455556666 (기한 2026-11-30)"
+
+
+def test_reminder_text_mentions_assignees():
+    text = render_thread(_reminder("D-day", mention=True, assignees=("U2", "U1"), accounts=(ACCOUNT, "444455556666")), {})
+    assert text == f"⏰ D-day · 미조치 계정 2개: {ACCOUNT}, 444455556666 (기한 2026-11-30) <@U1> <@U2>"
+
+
+def test_reminder_due_is_earliest_listed_account():
+    intent = _reminder("D-7", accounts=(ACCOUNT, "444455556666"))
+    intent.data["due_by_account"]["444455556666"] = "2026-11-28"
+    assert render_thread(intent, {}).endswith("(기한 2026-11-28)")
+
+
+def test_reminder_with_some_assignees_does_not_flag_missing():
+    text = render_thread(_reminder("D-7", mention=True, assignees=("U1",), accounts=(ACCOUNT, "444455556666")), {})
+    assert text.endswith("<@U1>")
+
+
+def test_reminder_text_flags_missing_assignee():
+    text = render_thread(_reminder("D-14", mention=True), {})
+    assert text == f"⏰ D-14 · 미조치 계정 1개: {ACCOUNT} (기한 2026-11-30) ⚠️ 담당자 미지정"
+
+
+def test_overdue_reminder_text():
+    text = render_thread(_reminder("D+3", mention=True, assignees=("U1",)), {})
+    assert text == f"🚨 기한 경과 D+3 · 미조치 계정 1개: {ACCOUNT} (기한 2026-11-30) <@U1>"

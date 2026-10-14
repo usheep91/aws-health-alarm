@@ -136,3 +136,48 @@ def _apply_with_retry(
         except ConcurrentModification:
             continue
     return apply_action(repo, tracking_id, kind, actor, now, assignee=assignee, due=due, reason=reason)
+
+
+AUTO_ASSIGN = "AUTO_ASSIGN"
+SYSTEM_ACTOR = "system"
+
+
+def auto_assign(repo: Repository, assignments: dict[str, str], now: datetime) -> list[Intent]:
+    """담당자가 비어 있는 비종결 항목에만 지정한다(수동 지정은 덮어쓰지 않는다). 그룹당 Intent 1건."""
+    applied: dict[str, list[TrackingItem]] = {}
+    for tracking_id, user_id in assignments.items():
+        item = _auto_assign_with_retry(repo, tracking_id, user_id, now)
+        if item is not None:
+            applied.setdefault(item.group_id, []).append(item)
+    return [
+        Intent(
+            IntentKind.ACTION,
+            group_id,
+            None,
+            {
+                "action": AUTO_ASSIGN,
+                "actor": SYSTEM_ACTOR,
+                "assignments": {i.account_id: i.assignee for i in items},
+                "accounts": [i.account_id for i in items],
+                "channel": None,
+            },
+        )
+        for group_id, items in applied.items()
+    ]
+
+
+def _auto_assign_with_retry(repo: Repository, tracking_id: str, user_id: str, now: datetime) -> TrackingItem | None:
+    for _ in range(MAX_ATTEMPTS):
+        item = repo.get_tracking(tracking_id)
+        if item is None or item.is_terminal or item.assignee:
+            return None
+        item.assignee = user_id
+        try:
+            repo.save_tracking(item)
+        except ConcurrentModification:
+            continue
+        repo.append_audit(
+            tracking_id, AuditEntry(now, SYSTEM_ACTOR, AUTO_ASSIGN, item.state.value, item.state.value, user_id)
+        )
+        return item
+    return None

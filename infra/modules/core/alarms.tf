@@ -86,3 +86,18 @@ resource "aws_cloudwatch_metric_alarm" "reconcile_incomplete" {
   treat_missing_data  = "notBreaching"
   alarm_actions       = [aws_sns_topic.alarms.arn]
 }
+
+# 일일 리마인더가 이틀 연속 성공하지 못하면 알린다.
+resource "aws_cloudwatch_metric_alarm" "reminder_heartbeat" {
+  alarm_name          = "${var.name_prefix}-reminder-heartbeat"
+  namespace           = "AHA"
+  metric_name         = "ReminderSuccess"
+  dimensions          = { service = "aha" }
+  statistic           = "Sum"
+  period              = 86400
+  evaluation_periods  = 2
+  threshold           = 1
+  comparison_operator = "LessThanThreshold"
+  treat_missing_data  = "breaching"
+  alarm_actions       = [aws_sns_topic.alarms.arn]
+}

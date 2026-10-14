@@ -67,3 +67,24 @@ resource "aws_scheduler_schedule" "reconcile" {
     }
   }
 }
+
+# 마일스톤 리마인더와 담당자 자동 지정. 첫 실행은 기준선만 기록하고 알림을 보내지 않는다.
+resource "aws_scheduler_schedule" "reminder" {
+  name                         = "${var.name_prefix}-reminder-daily"
+  schedule_expression          = "cron(0 9 * * ? *)"
+  schedule_expression_timezone = "Asia/Seoul"
+
+  flexible_time_window {
+    mode = "OFF"
+  }
+
+  target {
+    arn      = aws_lambda_function.fn["reminder"].arn
+    role_arn = aws_iam_role.scheduler.arn
+    input    = jsonencode({})
+
+    retry_policy {
+      maximum_retry_attempts = 2
+    }
+  }
+}

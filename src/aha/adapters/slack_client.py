@@ -51,6 +51,14 @@ class SlackGateway:
             initial_comment=initial_comment,
         )
 
+    def lookup_user_by_email(self, email: str) -> str | None:
+        try:
+            return self._call(self._client.users_lookupByEmail, email=email)["user"]["id"]
+        except SlackApiError as e:
+            if e.response.get("error") == "users_not_found":
+                return None
+            raise
+
     @staticmethod
     def _call(fn, **kwargs):
         try:

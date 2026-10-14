@@ -8,3 +8,4 @@ sla_days:
 force_track_event_types: []
 suppress_event_types: []
 health_dashboard_url: https://health.aws.amazon.com/health/home
+owner_email_domain: amazon.com

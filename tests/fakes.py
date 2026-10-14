@@ -126,7 +126,7 @@ class MapRouter:
 
 
 class FakeSlack:
-    def __init__(self, fail_channels=()):
+    def __init__(self, fail_channels=(), users=None):
         from aha.adapters.slack_client import SlackChannelError
 
         self._error = SlackChannelError
@@ -138,6 +138,9 @@ class FakeSlack:
         self.open_dm_error = None
         self.upload_error = None
         self.files = []
+        self.users = dict(users or {})
+        self.lookups = []
+        self.lookup_errors = {}
 
     def post(self, channel, text, blocks=None, thread_ts=None):
         if channel in self.fail_channels:
@@ -164,3 +167,9 @@ class FakeSlack:
         self.files.append(
             {"channel": channel, "filename": filename, "content": content, "title": title, "initial_comment": initial_comment}
         )
+
+    def lookup_user_by_email(self, email):
+        self.lookups.append(email)
+        if email in self.lookup_errors:
+            raise self.lookup_errors[email]
+        return self.users.get(email)

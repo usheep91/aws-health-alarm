@@ -6,6 +6,9 @@ import yaml
 
 DEFAULT_SLA_DAYS = {"issue": 3, "SECURITY": 7, "default": 30}
 DEFAULT_DASHBOARD_URL = "https://health.aws.amazon.com/health/home"
+DEFAULT_OWNER_EMAIL_DOMAIN = "amazon.com"
+DEFAULT_REMINDER_MILESTONES = (90, 60, 30, 14, 7, 3, 1, 0)
+DEFAULT_MENTION_WITHIN_DAYS = 14
 
 
 @dataclass(frozen=True)
@@ -18,6 +21,9 @@ class Config:
     force_track_event_types: frozenset[str] = frozenset()
     suppress_event_types: frozenset[str] = frozenset()
     health_dashboard_url: str = DEFAULT_DASHBOARD_URL
+    owner_email_domain: str = DEFAULT_OWNER_EMAIL_DOMAIN
+    reminder_milestones: tuple[int, ...] = DEFAULT_REMINDER_MILESTONES
+    mention_within_days: int = DEFAULT_MENTION_WITHIN_DAYS
 
     @classmethod
     def from_dict(cls, data: dict) -> Config:
@@ -32,6 +38,9 @@ class Config:
             force_track_event_types=frozenset(data.get("force_track_event_types") or ()),
             suppress_event_types=frozenset(data.get("suppress_event_types") or ()),
             health_dashboard_url=data.get("health_dashboard_url", DEFAULT_DASHBOARD_URL),
+            owner_email_domain=data.get("owner_email_domain", DEFAULT_OWNER_EMAIL_DOMAIN),
+            reminder_milestones=tuple(int(m) for m in data.get("reminder_milestones", DEFAULT_REMINDER_MILESTONES)),
+            mention_within_days=int(data.get("mention_within_days", DEFAULT_MENTION_WITHIN_DAYS)),
         )
 
     @classmethod

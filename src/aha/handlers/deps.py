@@ -10,15 +10,18 @@ from functools import cache
 
 import boto3
 from slack_sdk import WebClient
+from slack_sdk.http_retry.builtin_handlers import RateLimitErrorRetryHandler
 
 from aha.adapters.health_client import HealthClient
 from aha.adapters.intent_queue import SqsIntentPublisher
+from aha.adapters.org_client import OrgDirectory
 from aha.adapters.repo_dynamodb import DynamoRepository
 from aha.adapters.slack_client import SlackGateway
 from aha.config import Config, load_config
 from aha.routing import StaticRouter
 
 SLACK_TIMEOUT_SECONDS = 5
+SLACK_RATE_LIMIT_RETRIES = 2
 
 
 @cache
@@ -42,6 +45,16 @@ def health() -> HealthClient:
 
 
 @cache
+def organizations_client():
+    return OrgDirectory.default_client()
+
+
+def org_directory() -> OrgDirectory:
+    """호출(실행)마다 새로 만들어 계정 목록은 실행 안에서만 캐시한다. warm 컨테이너에서 신규 계정을 놓치지 않는다."""
+    return OrgDirectory(organizations_client())
+
+
+@cache
 def slack_secret() -> dict:
     secret = boto3.client("secretsmanager").get_secret_value(SecretId=os.environ["SLACK_SECRET_ARN"])
     return json.loads(secret["SecretString"])
@@ -49,7 +62,17 @@ def slack_secret() -> dict:
 
 @cache
 def slack() -> SlackGateway:
+    # interaction은 3초 안에 Slack에 응답해야 하므로 429에서 대기하지 않고 SlackRetryable로 실패한다.
     return SlackGateway(WebClient(token=slack_secret()["bot_token"], timeout=SLACK_TIMEOUT_SECONDS))
+
+
+@cache
+def reminder_slack() -> SlackGateway:
+    """reminder Lambda 전용. 사용자 조회가 많으므로 429는 Retry-After만큼 기다려 최대 2회 재시도한다."""
+    client = WebClient(token=slack_secret()["bot_token"], timeout=SLACK_TIMEOUT_SECONDS)
+    # 기본 연결 오류 재시도는 유지한다.
+    client.retry_handlers.append(RateLimitErrorRetryHandler(max_retry_count=SLACK_RATE_LIMIT_RETRIES))
+    return SlackGateway(client)
 
 
 @cache

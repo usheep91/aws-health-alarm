@@ -15,6 +15,11 @@ locals {
       timeout = 10
       memory  = 256
     }
+    reminder = {
+      handler = "aha.handlers.reminder.lambda_handler"
+      timeout = 300
+      memory  = 256
+    }
   }
 
   common_env = {
