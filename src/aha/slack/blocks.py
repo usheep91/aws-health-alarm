@@ -69,7 +69,8 @@ def render_notice(
     active = [i for i in items if not i.is_terminal]
     if not active:
         header = f"✅ [완료] {title}"
-        return header, [_header(header), _summary(event), {"type": "divider"}, *_account_blocks(items, names)]
+        done = [_header(header), _summary(event), *_description_actions(event), {"type": "divider"}, *_account_blocks(items, names)]
+        return header, done
 
     due = min(i.due_date for i in active)
     triage_only = all(i.state is State.TRIAGE for i in active)
@@ -106,6 +107,21 @@ def render_notice(
 
 def _header(text: str) -> dict:
     return {"type": "header", "text": plain(text[:HEADER_LIMIT])}
+
+
+def _is_truncated(event: EventRecord) -> bool:
+    return len(event.description or "") > SUMMARY_LIMIT
+
+
+def _description_button() -> dict:
+    return _button("전체 내용 보기", "description")
+
+
+def _description_actions(event: EventRecord) -> list[dict]:
+    """완료된 Notice에는 actions 블록이 없으므로 잘린 경우에만 버튼 전용 블록을 둔다."""
+    if not _is_truncated(event):
+        return []
+    return [{"type": "actions", "block_id": f"grp:{event.group_id}", "elements": [_description_button()]}]
 
 
 def _summary(event: EventRecord) -> dict:
@@ -158,6 +174,8 @@ def _actions(event: EventRecord, triage_only: bool, cfg: Config) -> dict:
             _button("리소스 보기", "resources"),
             {"type": "button", "action_id": "dashboard", "text": plain("Health Dashboard"), "url": cfg.health_dashboard_url},
         ]
+    if _is_truncated(event):
+        elements.append(_description_button())
     return {"type": "actions", "block_id": f"grp:{event.group_id}", "elements": elements}
 
 

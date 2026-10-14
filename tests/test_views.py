@@ -68,3 +68,69 @@ def test_resources_view_export_button_is_first_block():
 def test_resources_view_without_export_value_has_no_button():
     view = resources_view([make_item()], {}, {})
     assert all(b["type"] != "actions" for b in view["blocks"])
+
+
+def _event(description):
+    from tests.test_blocks import _event as make_event
+
+    return make_event(description=description)
+
+
+def _texts(view):
+    return [b["text"]["text"] for b in view["blocks"] if b["type"] == "section"]
+
+
+def test_description_view_short():
+    from aha.slack.views import description_view
+
+    view = description_view(_event("짧은 설명"))
+    assert view["type"] == "modal"
+    assert view["title"]["text"] == "이벤트 상세"
+    assert view["close"]["text"] == "닫기"
+    assert len(view["blocks"]) == 2
+    assert view["blocks"][0]["text"]["text"] == "*RDS · AWS_RDS_PLANNED_LIFECYCLE_EVENT*\n리전: ap-northeast-2 · 상태: upcoming"
+    assert view["blocks"][1]["text"]["text"] == "짧은 설명"
+
+
+def test_description_view_splits_long_multiline_text():
+    from aha.slack.views import SECTION_LIMIT, description_view
+
+    text = "\n".join(f"line {n} " + "x" * 60 for n in range(100))
+    assert len(text) > 6500
+    sections = _texts(description_view(_event(text)))[1:]
+    assert len(sections) > 1
+    assert all(0 < len(s) <= SECTION_LIMIT for s in sections)
+    assert "\n".join(sections) == text
+
+
+def test_description_view_hard_splits_single_long_line():
+    from aha.slack.views import SECTION_LIMIT, description_view
+
+    text = "a" * 6000
+    sections = _texts(description_view(_event(text)))[1:]
+    assert len(sections) == 3
+    assert all(0 < len(s) <= SECTION_LIMIT for s in sections)
+    assert "".join(sections) == text
+
+
+def test_description_view_escapes_mrkdwn():
+    from aha.slack.views import description_view
+
+    sections = _texts(description_view(_event("<!channel> & more")))
+    assert sections[1] == "&lt;!channel&gt; &amp; more"
+
+
+def test_description_view_caps_blocks():
+    from aha.slack.views import MAX_MODAL_BLOCKS, description_view
+
+    view = description_view(_event("\n".join("y" * 2000 for _ in range(500))))
+    assert len(view["blocks"]) <= MAX_MODAL_BLOCKS
+    last = view["blocks"][-1]
+    assert last["type"] == "context"
+    assert "AWS Health Dashboard" in last["elements"][0]["text"]
+
+
+def test_description_view_without_description():
+    from aha.slack.views import description_view
+
+    assert _texts(description_view(_event(None)))[1] == "(설명 없음)"

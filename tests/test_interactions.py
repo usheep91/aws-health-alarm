@@ -189,3 +189,23 @@ def test_export_click_from_modal_publishes_export_intent():
     assert service.handle(payload) is None
     assert pub.intents == [Intent(IntentKind.EXPORT, GID, None, {"channel": "C0SHADOW", "requester": "U9"})]
     assert slack.views == []
+
+
+def test_description_opens_modal_with_full_text():
+    long_text = "설명 " * 400
+    repo, slack, pub, service = _setup(description=long_text)
+    before = repo.get_tracking(TID)
+    service.handle(_group_action("description"))
+    view = slack.views[0]["view"]
+    assert view["title"]["text"] == "이벤트 상세"
+    text = "".join(b["text"]["text"] for b in view["blocks"] if b["type"] == "section")
+    assert long_text.splitlines()[0] in text
+    assert pub.intents == []
+    assert repo.get_tracking(TID) == before
+
+
+def test_description_for_unknown_group_does_nothing():
+    _, slack, pub, service = _setup()
+    service.handle(_block_action({"action_id": "description", "block_id": "grp:missing"}))
+    assert slack.views == []
+    assert pub.intents == []

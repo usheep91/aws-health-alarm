@@ -3,11 +3,12 @@ from __future__ import annotations
 import json
 from datetime import date
 
-from aha.domain.models import Entity, TrackingItem
-from aha.slack.blocks import account_label, esc, mrkdwn, plain, status_text
+from aha.domain.models import Entity, EventRecord, TrackingItem
+from aha.slack.blocks import _context, account_label, esc, mrkdwn, plain, status_text
 
 MAX_RESOURCES = 100
 SECTION_LIMIT = 2900
+MAX_MODAL_BLOCKS = 100
 
 
 def due_date_view(meta: dict, initial: date) -> dict:
@@ -87,6 +88,24 @@ def resources_view(
             },
         )
     return {"type": "modal", "title": plain("영향 리소스"), "close": plain("닫기"), "blocks": blocks}
+
+
+def description_view(event: EventRecord) -> dict:
+    head = (
+        f"*{esc(event.service)} · {esc(event.event_type_code)}*\n"
+        f"리전: {esc(event.event_region)} · 상태: {esc(event.status_code)}"
+    )
+    text = esc(event.description or "(설명 없음)")
+    lines: list[str] = []
+    for line in text.splitlines():
+        lines.extend([line[i : i + SECTION_LIMIT] for i in range(0, len(line), SECTION_LIMIT)] or [""])
+    sections = [c for c in _chunks(lines) if c.strip()] or [text]
+    limit = MAX_MODAL_BLOCKS - 2
+    blocks = [{"type": "section", "text": mrkdwn(head)}]
+    blocks += [{"type": "section", "text": mrkdwn(c)} for c in sections[:limit]]
+    if len(sections) > limit:
+        blocks.append(_context("내용이 길어 일부만 표시합니다. 전체 내용은 AWS Health Dashboard에서 확인하세요."))
+    return {"type": "modal", "title": plain("이벤트 상세"), "close": plain("닫기"), "blocks": blocks}
 
 
 def _chunks(lines: list[str]) -> list[str]:
