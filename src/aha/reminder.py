@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime
 
@@ -10,7 +11,7 @@ from aha.adapters.slack_client import SlackRetryable
 from aha.config import Config
 from aha.domain.actions import auto_assign
 from aha.domain.due_date import to_local_date
-from aha.domain.models import Intent, IntentKind, State, TrackingItem
+from aha.domain.models import Intent, IntentKind, State, TrackingItem, tracking_id_of
 from aha.domain.reminders import ReminderDecision, decide_reminder
 from aha.domain.repository import ConcurrentModification, Repository
 
@@ -19,6 +20,9 @@ logger = logging.getLogger(__name__)
 MAX_ATTEMPTS = 3
 AUTO_ASSIGN_STATES = (State.OPEN, State.TRIAGE)
 ACTIVE_ACCOUNT = "ACTIVE"
+# 사용자 조회는 계정마다 Slack API를 부르므로, 리마인더를 보낼 시간을 남기도록 실행당 상한을 둔다.
+MAX_OWNER_LOOKUPS_PER_RUN = 200
+LOOKUP_STOP_MARGIN_SECONDS = 120
 
 
 @dataclass
@@ -36,14 +40,19 @@ class ReminderService:
         self._org = org
         self._cfg = cfg
 
-    def run(self, now: datetime) -> ReminderResult:
+    def run(self, now: datetime, time_left: Callable[[], float] | None = None) -> ReminderResult:
+        """time_left는 남은 실행 시간(초). LOOKUP_STOP_MARGIN_SECONDS 미만이면 담당자 조회를 멈추고 리마인더로 넘어간다."""
         result = ReminderResult()
         today = to_local_date(now, self._cfg.timezone)
-        result.auto_assigned = self._auto_assign(now)
+        applied = self._auto_assign(now, time_left)
+        result.auto_assigned = len(applied)
 
         pending: list[tuple[TrackingItem, ReminderDecision]] = []
         for item in self._repo.list_by_state(State.OPEN):
             result.evaluated += 1
+            # 상태 인덱스는 최종 일관성이라 방금 자동 지정한 담당자가 빠져 있을 수 있다.
+            if not item.assignee and item.tracking_id in applied:
+                item.assignee = applied[item.tracking_id]
             decision = decide_reminder(item, today, self._cfg)
             if decision.sent != item.reminders_sent:
                 pending.append((item, decision))
@@ -57,19 +66,25 @@ class ReminderService:
 
     # --- 담당자 자동 지정 ---
 
-    def _auto_assign(self, now: datetime) -> int:
+    def _auto_assign(self, now: datetime, time_left: Callable[[], float] | None) -> dict[str, str]:
+        """이번 실행에서 지정한 담당자를 {tracking_id: user_id}로 돌려준다."""
         unassigned = [i for state in AUTO_ASSIGN_STATES for i in self._repo.list_by_state(state) if not i.assignee]
         if not unassigned:
-            return 0
+            return {}
         try:
             accounts = self._org.accounts()
         except Exception:
             logger.exception("organization account lookup failed; skipping auto-assign")
-            return 0
+            return {}
         owners: dict[str, str | None] = {}
         assignments: dict[str, str] = {}
         for item in unassigned:
             if item.account_id not in owners:
+                if len(owners) >= MAX_OWNER_LOOKUPS_PER_RUN or (
+                    time_left is not None and time_left() < LOOKUP_STOP_MARGIN_SECONDS
+                ):
+                    logger.warning("owner lookup budget exhausted; continuing next run", extra={"lookups": len(owners)})
+                    break
                 try:
                     owners[item.account_id] = self._resolve_owner(item.account_id, accounts)
                 except SlackRetryable as e:
@@ -80,7 +95,11 @@ class ReminderService:
                 assignments[item.tracking_id] = owners[item.account_id]
         intents = auto_assign(self._repo, assignments, now)
         self._publisher.publish(intents)
-        return sum(len(i.data["accounts"]) for i in intents)
+        return {
+            tracking_id_of(i.group_id, account_id): user_id
+            for i in intents
+            for account_id, user_id in i.data["assignments"].items()
+        }
 
     def _resolve_owner(self, account_id: str, accounts: dict[str, AccountInfo]) -> str | None:
         info = accounts.get(account_id)

@@ -28,15 +28,19 @@ def handler(monkeypatch):
 
 
 def test_reminder_handler_emits_success_metric_and_logs_result(handler, monkeypatch, capsys, caplog):
+    seen = {}
+
     class FakeService:
         def __init__(self, *args):
             assert len(args) == 5
 
-        def run(self, now):
+        def run(self, now, time_left=None):
+            seen["time_left"] = time_left()
             return ReminderResult(evaluated=3, reminded=1, auto_assigned=2)
 
     monkeypatch.setattr(handler, "ReminderService", FakeService)
     returned = handler.lambda_handler({}, _context())
+    assert seen["time_left"] == 300.0
     assert returned == {"evaluated": 3, "reminded": 1, "auto_assigned": 2}
 
     docs = []

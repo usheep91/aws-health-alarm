@@ -269,3 +269,62 @@ def test_inactive_accounts_are_not_auto_assigned(status):
     assert service.run(NOW).auto_assigned == 0
     assert slack.lookups == []
     assert repo.get_tracking(f"g1#{ACCOUNT}").assignee is None
+
+
+def _many_accounts(n):
+    ids = [f"{100000000000 + k}" for k in range(n)]
+    org = FakeOrg(accounts={a: AccountInfo(a, a, f"user{a}@amazon.com", "ACTIVE") for a in ids})
+    users = {f"user{a}@amazon.com": f"U{a}" for a in ids}
+    reached = {BASELINE, "D-90", "D-60"}
+    items = [make_item(group_id=f"g{a}", account_id=a, due_date=TODAY + timedelta(days=30), reminders_sent=reached) for a in ids]
+    return ids, org, users, items
+
+
+def test_owner_lookups_are_capped_per_run(monkeypatch):
+    import aha.reminder
+
+    monkeypatch.setattr(aha.reminder, "MAX_OWNER_LOOKUPS_PER_RUN", 2)
+    _, org, users, items = _many_accounts(3)
+    service, _, publisher, slack = _service(*items, users=users, org=org)
+    result = service.run(NOW)
+    assert len(slack.lookups) == 2
+    assert result.auto_assigned == 2
+    assert result.reminded == 3
+
+
+def test_owner_lookups_stop_when_time_is_short():
+    _, org, users, items = _many_accounts(3)
+    service, _, publisher, slack = _service(*items, users=users, org=org)
+    remaining = iter([300.0])
+    result = service.run(NOW, time_left=lambda: next(remaining, 119.0))
+    assert len(slack.lookups) == 1
+    assert result.auto_assigned == 1
+    assert [i.kind for i in publisher.intents].count(IntentKind.REMINDER) == 3
+
+
+class StaleIndexRepository(InMemoryRepository):
+    """GSI(list_by_state)는 생성 시점 사본을 돌려주는 최종 일관성 인덱스를 흉내 낸다."""
+
+    def __init__(self):
+        super().__init__()
+        self.snapshots = {}
+
+    def create_tracking(self, item):
+        created = super().create_tracking(item)
+        self.snapshots[item.tracking_id] = self.get_tracking(item.tracking_id)
+        return created
+
+    def list_by_state(self, state):
+        items = [t for t in self.snapshots.values() if t.state is state]
+        return [t for t in sorted(items, key=lambda t: (t.due_date, t.tracking_id))]
+
+
+def test_reminder_uses_assignee_auto_assigned_in_same_run():
+    repo = StaleIndexRepository()
+    service, repo, publisher, _ = _service(
+        make_item(due_date=TODAY + timedelta(days=14), reminders_sent={BASELINE, "D-90", "D-60", "D-30"}), repo=repo
+    )
+    service.run(NOW)
+    reminder = next(i for i in publisher.intents if i.kind is IntentKind.REMINDER)
+    assert reminder.data["assignee_by_account"] == {ACCOUNT: "UUSHEEP"}
+    assert "D-14" in repo.get_tracking(f"g1#{ACCOUNT}").reminders_sent
