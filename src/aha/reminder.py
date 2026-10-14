@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 MAX_ATTEMPTS = 3
 AUTO_ASSIGN_STATES = (State.OPEN, State.TRIAGE)
+ACTIVE_ACCOUNT = "ACTIVE"
 
 
 @dataclass
@@ -83,7 +84,8 @@ class ReminderService:
 
     def _resolve_owner(self, account_id: str, accounts: dict[str, AccountInfo]) -> str | None:
         info = accounts.get(account_id)
-        alias = owner_alias(info.email) if info else None
+        # 정지·해지 진행 중인 계정의 이메일은 더 이상 담당자를 가리키지 않을 수 있다.
+        alias = owner_alias(info.email) if info and info.status == ACTIVE_ACCOUNT else None
         if alias is None:
             return None
         try:

@@ -11,3 +11,13 @@ def test_slack_client_retries_rate_limits(monkeypatch):
     finally:
         deps.slack.cache_clear()
     assert [h.max_retry_count for h in handlers] == [2]
+
+
+def test_org_directory_is_fresh_per_call_but_shares_client():
+    deps.organizations_client.cache_clear()
+    try:
+        first, second = deps.org_directory(), deps.org_directory()
+        assert first is not second
+        assert first._client is second._client
+    finally:
+        deps.organizations_client.cache_clear()

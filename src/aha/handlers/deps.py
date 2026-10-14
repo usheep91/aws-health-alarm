@@ -45,8 +45,13 @@ def health() -> HealthClient:
 
 
 @cache
+def organizations_client():
+    return OrgDirectory.default_client()
+
+
 def org_directory() -> OrgDirectory:
-    return OrgDirectory()
+    """호출(실행)마다 새로 만들어 계정 목록은 실행 안에서만 캐시한다. warm 컨테이너에서 신규 계정을 놓치지 않는다."""
+    return OrgDirectory(organizations_client())
 
 
 @cache

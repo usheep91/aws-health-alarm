@@ -260,3 +260,12 @@ def test_publish_failure_leaves_reminders_unrecorded():
         service.run(NOW)
     # 기록하지 않았으므로 다음 실행에서 같은 리마인더를 다시 보낸다(유실보다 중복을 택한다).
     assert repo.get_tracking(f"g1#{ACCOUNT}").reminders_sent == sent
+
+
+@pytest.mark.parametrize("status", ["SUSPENDED", "PENDING_CLOSURE"])
+def test_inactive_accounts_are_not_auto_assigned(status):
+    org = FakeOrg(accounts={ACCOUNT: AccountInfo(ACCOUNT, "dev", USHEEP, status)})
+    service, repo, _, slack = _service(make_item(), org=org)
+    assert service.run(NOW).auto_assigned == 0
+    assert slack.lookups == []
+    assert repo.get_tracking(f"g1#{ACCOUNT}").assignee is None

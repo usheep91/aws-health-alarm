@@ -18,10 +18,12 @@ class OrgDirectory:
     """AWS Organizations 계정 목록 읽기 전용 래퍼. 인스턴스당 한 번만 조회한다."""
 
     def __init__(self, client=None) -> None:
-        self._client = client or boto3.client(
-            "organizations", config=BotoConfig(retries={"mode": "adaptive", "max_attempts": 10})
-        )
+        self._client = client or self.default_client()
         self._accounts: dict[str, AccountInfo] | None = None
+
+    @staticmethod
+    def default_client():
+        return boto3.client("organizations", config=BotoConfig(retries={"mode": "adaptive", "max_attempts": 10}))
 
     def accounts(self) -> dict[str, AccountInfo]:
         if self._accounts is None:
