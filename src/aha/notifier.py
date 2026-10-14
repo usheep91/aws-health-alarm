@@ -82,6 +82,10 @@ class Notifier:
             return intent.data["channel"] == channel
         if intent.tracking_id:
             return any(i.tracking_id == intent.tracking_id for i in items)
+        if intent.data.get("accounts"):
+            # 채널 지정이 없는 계정 단위 알림(리마인더, 자동 지정)은 해당 계정이 있는 채널에만 남긴다.
+            accounts = set(intent.data["accounts"])
+            return any(i.account_id in accounts for i in items)
         return True
 
     def _sync(self, intent, event: EventRecord, channel: str, items, notice: Notice | None, today: date) -> None:

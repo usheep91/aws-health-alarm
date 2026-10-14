@@ -101,6 +101,26 @@ def test_aws_due_date_change_is_applied():
     assert repo.get_tracking(TID).due_date == date(2027, 2, 28)
 
 
+def test_aws_due_date_change_resets_reminders():
+    repo = InMemoryRepository()
+    _initial(repo)
+    item = repo.get_tracking(TID)
+    item.reminders_sent = {"BASELINE", "D-90"}
+    repo.save_tracking(item)
+    _initial(repo, start_time=datetime(2027, 2, 28, tzinfo=UTC), last_updated_time=LATER)
+    assert repo.get_tracking(TID).reminders_sent == set()
+
+
+def test_unchanged_due_date_keeps_reminders():
+    repo = InMemoryRepository()
+    _initial(repo)
+    item = repo.get_tracking(TID)
+    item.reminders_sent = {"BASELINE", "D-90"}
+    repo.save_tracking(item)
+    _initial(repo, last_updated_time=LATER)
+    assert repo.get_tracking(TID).reminders_sent == {"BASELINE", "D-90"}
+
+
 def test_manual_due_date_is_kept_when_aws_changes():
     repo = InMemoryRepository()
     _initial(repo)

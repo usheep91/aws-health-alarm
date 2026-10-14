@@ -2,12 +2,12 @@ from datetime import date
 
 import pytest
 
-from aha.domain.actions import ActionKind, InvalidAction, apply_group_action
+from aha.domain.actions import ActionKind, InvalidAction, apply_group_action, auto_assign
 from aha.domain.grouping import correlation_key, group_id_for
 from aha.domain.models import DueDateSource, Entity, IntentKind, State, Tier, tracking_id_of
 from aha.domain.observe import observe
 from aha.domain.repository import ConcurrentModification
-from tests.factories import ACCOUNT, NOW, OTHER_ACCOUNT, make_config, make_snapshot
+from tests.factories import ACCOUNT, NOW, OTHER_ACCOUNT, make_config, make_item, make_snapshot
 from tests.fakes import InMemoryRepository
 
 CFG = make_config()
@@ -142,3 +142,68 @@ def test_group_skips_item_whose_retries_are_exhausted():
     assert intents[0].data["accounts"] == [ACCOUNT]
     assert repo.get_tracking(TID).assignee == "U2"
     assert repo.get_tracking(OTHER_TID).assignee is None
+
+
+# --- 자동 담당자 지정 ---
+
+
+def _auto_repo(*items):
+    repo = InMemoryRepository()
+    for item in items:
+        repo.create_tracking(item)
+    return repo
+
+
+def test_auto_assign_sets_assignee_and_emits_one_intent_per_group():
+    repo = _auto_repo(
+        make_item(group_id="g1", account_id=ACCOUNT),
+        make_item(group_id="g1", account_id=OTHER_ACCOUNT),
+        make_item(group_id="g2", account_id=ACCOUNT, state=State.TRIAGE, tier=Tier.REVIEW),
+    )
+    intents = auto_assign(repo, {f"g1#{ACCOUNT}": "U1", f"g1#{OTHER_ACCOUNT}": "U2", f"g2#{ACCOUNT}": "U1"}, NOW)
+    assert [(i.kind, i.group_id, i.tracking_id) for i in intents] == [
+        (IntentKind.ACTION, "g1", None),
+        (IntentKind.ACTION, "g2", None),
+    ]
+    assert intents[0].data == {
+        "action": "AUTO_ASSIGN",
+        "actor": "system",
+        "assignments": {ACCOUNT: "U1", OTHER_ACCOUNT: "U2"},
+        "accounts": [ACCOUNT, OTHER_ACCOUNT],
+        "channel": None,
+    }
+    assert repo.get_tracking(f"g1#{OTHER_ACCOUNT}").assignee == "U2"
+    assert repo.get_tracking(f"g2#{ACCOUNT}").state is State.TRIAGE
+    audit = repo.list_audit(f"g1#{ACCOUNT}")[-1]
+    assert (audit.actor, audit.action, audit.before, audit.after, audit.detail) == ("system", "AUTO_ASSIGN", "OPEN", "OPEN", "U1")
+
+
+def test_auto_assign_never_overwrites_existing_assignee():
+    repo = _auto_repo(make_item(assignee="UMANUAL"))
+    assert auto_assign(repo, {f"g1#{ACCOUNT}": "U1"}, NOW) == []
+    assert repo.get_tracking(f"g1#{ACCOUNT}").assignee == "UMANUAL"
+    assert repo.list_audit(f"g1#{ACCOUNT}") == []
+
+
+def test_auto_assign_skips_missing_and_terminal_items():
+    repo = _auto_repo(make_item(state=State.RESOLVED_AUTO))
+    assert auto_assign(repo, {f"g1#{ACCOUNT}": "U1", "g9#999999999999": "U2"}, NOW) == []
+    assert repo.get_tracking(f"g1#{ACCOUNT}").assignee is None
+
+
+def test_auto_assign_retries_conflicts():
+    repo = ConflictingRepository(0)
+    repo.create_tracking(make_item())
+    repo.failures = 2
+    intents = auto_assign(repo, {f"g1#{ACCOUNT}": "U1"}, NOW)
+    assert intents[0].data["assignments"] == {ACCOUNT: "U1"}
+    assert repo.get_tracking(f"g1#{ACCOUNT}").assignee == "U1"
+    assert [e.action for e in repo.list_audit(f"g1#{ACCOUNT}")] == ["AUTO_ASSIGN"]
+
+
+def test_auto_assign_skips_item_whose_retries_are_exhausted():
+    repo = ConflictingRepository(0)
+    repo.create_tracking(make_item())
+    repo.failures = 3
+    assert auto_assign(repo, {f"g1#{ACCOUNT}": "U1"}, NOW) == []
+    assert repo.get_tracking(f"g1#{ACCOUNT}").assignee is None
