@@ -95,17 +95,32 @@ def description_view(event: EventRecord) -> dict:
         f"*{esc(event.service)} · {esc(event.event_type_code)}*\n"
         f"리전: {esc(event.event_region)} · 상태: {esc(event.status_code)}"
     )
-    text = esc(event.description or "(설명 없음)")
+    text = esc(event.description) if event.description and event.description.strip() else "(설명 없음)"
     lines: list[str] = []
     for line in text.splitlines():
-        lines.extend([line[i : i + SECTION_LIMIT] for i in range(0, len(line), SECTION_LIMIT)] or [""])
-    sections = [c for c in _chunks(lines) if c.strip()] or [text]
+        lines.extend(_hard_split(line) or [""])
+    sections = [c for c in _chunks(lines) if c.strip()]
     limit = MAX_MODAL_BLOCKS - 2
     blocks = [{"type": "section", "text": mrkdwn(head)}]
     blocks += [{"type": "section", "text": mrkdwn(c)} for c in sections[:limit]]
     if len(sections) > limit:
         blocks.append(_context("내용이 길어 일부만 표시합니다. 전체 내용은 AWS Health Dashboard에서 확인하세요."))
     return {"type": "modal", "title": plain("이벤트 상세"), "close": plain("닫기"), "blocks": blocks}
+
+
+def _hard_split(line: str) -> list[str]:
+    """SECTION_LIMIT 초과 한 줄을 자른다. 이스케이프 엔티티(&amp; 등) 중간은 자르지 않는다."""
+    pieces: list[str] = []
+    start = 0
+    while start < len(line):
+        end = start + SECTION_LIMIT
+        if end < len(line):
+            tail = line[start:end].rfind("&")
+            if tail > 0 and ";" not in line[start + tail : end]:
+                end = start + tail
+        pieces.append(line[start:end])
+        start = end
+    return pieces
 
 
 def _chunks(lines: list[str]) -> list[str]:
