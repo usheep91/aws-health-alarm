@@ -44,6 +44,9 @@ class StubClient:
     def files_upload_v2(self, **kwargs):
         return self._call("files_upload_v2", kwargs, {"ok": True})
 
+    def users_lookupByEmail(self, **kwargs):
+        return self._call("users_lookupByEmail", kwargs, {"ok": True, "user": {"id": "U123"}})
+
 
 def test_post_drops_none_arguments():
     client = StubClient()
@@ -104,3 +107,23 @@ def test_upload_channel_error_is_classified():
     gateway = SlackGateway(StubClient(_error(200, "channel_not_found")))
     with pytest.raises(SlackChannelError):
         gateway.upload_file("D1", "a.csv", b"x", title="t", initial_comment="c")
+
+
+def test_lookup_user_by_email_returns_user_id():
+    client = StubClient()
+    assert SlackGateway(client).lookup_user_by_email("usheep@amazon.com") == "U123"
+    assert client.calls == [("users_lookupByEmail", {"email": "usheep@amazon.com"})]
+
+
+def test_lookup_user_by_email_not_found_returns_none():
+    assert SlackGateway(StubClient(_error(200, "users_not_found"))).lookup_user_by_email("nobody@amazon.com") is None
+
+
+def test_lookup_user_by_email_rate_limit_is_retryable():
+    with pytest.raises(SlackRetryable):
+        SlackGateway(StubClient(_error(429, "ratelimited"))).lookup_user_by_email("usheep@amazon.com")
+
+
+def test_lookup_user_by_email_other_errors_propagate():
+    with pytest.raises(SlackApiError):
+        SlackGateway(StubClient(_error(200, "missing_scope"))).lookup_user_by_email("usheep@amazon.com")

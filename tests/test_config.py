@@ -29,3 +29,22 @@ def test_load_config_from_ssm():
     ssm.put_parameter(Name="/aha/dev/config", Type="String", Value="default_channel: C0DEFAULT\nshadow_channel: C0SHADOW\n")
     cfg = load_config(ssm, "/aha/dev/config")
     assert cfg.shadow_channel == "C0SHADOW"
+
+
+def test_reminder_and_owner_defaults():
+    cfg = Config.from_dict({"default_channel": "C0DEFAULT"})
+    assert cfg.owner_email_domain == "amazon.com"
+    assert cfg.reminder_milestones == (90, 60, 30, 14, 7, 3, 1, 0)
+    assert cfg.mention_within_days == 14
+
+
+def test_reminder_and_owner_overrides():
+    cfg = Config.from_yaml(
+        "default_channel: C0DEFAULT\n"
+        "owner_email_domain: example.com\n"
+        "reminder_milestones: [30, 7, 0]\n"
+        "mention_within_days: 7\n"
+    )
+    assert cfg.owner_email_domain == "example.com"
+    assert cfg.reminder_milestones == (30, 7, 0)
+    assert cfg.mention_within_days == 7
