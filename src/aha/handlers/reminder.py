@@ -16,7 +16,7 @@ metrics = Metrics()
 @metrics.log_metrics
 @logger.inject_lambda_context
 def lambda_handler(event, context):
-    service = ReminderService(deps.repository(), deps.publisher(), deps.slack(), deps.org_directory(), deps.config())
+    service = ReminderService(deps.repository(), deps.publisher(), deps.reminder_slack(), deps.org_directory(), deps.config())
     result = service.run(datetime.now(UTC))
     # 알람은 service 차원만으로 조회하므로 추가 차원을 붙이지 않는다.
     metrics.add_metric(name="ReminderSuccess", unit=MetricUnit.Count, value=1)

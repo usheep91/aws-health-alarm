@@ -62,8 +62,15 @@ def slack_secret() -> dict:
 
 @cache
 def slack() -> SlackGateway:
+    # interaction은 3초 안에 Slack에 응답해야 하므로 429에서 대기하지 않고 SlackRetryable로 실패한다.
+    return SlackGateway(WebClient(token=slack_secret()["bot_token"], timeout=SLACK_TIMEOUT_SECONDS))
+
+
+@cache
+def reminder_slack() -> SlackGateway:
+    """reminder Lambda 전용. 사용자 조회가 많으므로 429는 Retry-After만큼 기다려 최대 2회 재시도한다."""
     client = WebClient(token=slack_secret()["bot_token"], timeout=SLACK_TIMEOUT_SECONDS)
-    # 기본 연결 오류 재시도는 유지하고, 429는 Retry-After만큼 기다려 최대 2회 재시도한다.
+    # 기본 연결 오류 재시도는 유지한다.
     client.retry_handlers.append(RateLimitErrorRetryHandler(max_retry_count=SLACK_RATE_LIMIT_RETRIES))
     return SlackGateway(client)
 

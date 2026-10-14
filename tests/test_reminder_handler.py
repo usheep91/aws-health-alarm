@@ -22,7 +22,7 @@ def handler(monkeypatch):
     monkeypatch.setenv("POWERTOOLS_METRICS_NAMESPACE", "AHA")
     monkeypatch.setenv("POWERTOOLS_SERVICE_NAME", "aha")
     module = importlib.reload(importlib.import_module("aha.handlers.reminder"))
-    for name in ("repository", "publisher", "slack", "org_directory", "config"):
+    for name in ("repository", "publisher", "reminder_slack", "org_directory", "config"):
         monkeypatch.setattr(module.deps, name, lambda: None)
     return module
 
