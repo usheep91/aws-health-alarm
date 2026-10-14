@@ -80,11 +80,32 @@ data "aws_iam_policy_document" "interaction" {
   }
 }
 
+data "aws_iam_policy_document" "reminder" {
+  source_policy_documents = [data.aws_iam_policy_document.common.json]
+  statement {
+    sid       = "SlackSecret"
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = [var.slack_secret_arn]
+  }
+  statement {
+    sid       = "PublishIntents"
+    actions   = ["sqs:SendMessage"]
+    resources = [aws_sqs_queue.notify.arn]
+  }
+  # 계정 이메일로 담당자를 자동 지정한다. ListAccounts는 리소스 수준 권한을 지원하지 않는다.
+  statement {
+    sid       = "OrganizationAccounts"
+    actions   = ["organizations:ListAccounts"]
+    resources = ["*"]
+  }
+}
+
 locals {
   function_policies = {
     reconcile   = data.aws_iam_policy_document.reconcile.json
     notifier    = data.aws_iam_policy_document.notifier.json
     interaction = data.aws_iam_policy_document.interaction.json
+    reminder    = data.aws_iam_policy_document.reminder.json
   }
 }
 
@@ -127,7 +148,7 @@ resource "aws_iam_role" "scheduler" {
 data "aws_iam_policy_document" "scheduler" {
   statement {
     actions   = ["lambda:InvokeFunction"]
-    resources = [aws_lambda_function.fn["reconcile"].arn]
+    resources = [aws_lambda_function.fn["reconcile"].arn, aws_lambda_function.fn["reminder"].arn]
   }
 }
 
